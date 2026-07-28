@@ -2,14 +2,21 @@ const express = require("express");
 const router = express.Router();
 
 router.post("/stk-callback", (req, res) => {
-  console.log("STK Callback received:", JSON.stringify(req.body, null, 2));
+  const body = req.body;
 
-  const callback = req.body?.Body?.stkCallback;
-
-  if (!callback) {
-    console.warn("Unexpected callback payload shape");
+  // Ignore empty/ping requests (health checks, monitors) — not real Safaricom callbacks
+  if (!body || Object.keys(body).length === 0) {
     return res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
   }
+
+  const callback = body?.Body?.stkCallback;
+
+  if (!callback) {
+    console.warn("Unrecognized callback payload:", JSON.stringify(body));
+    return res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
+  }
+
+  console.log("STK Callback received:", JSON.stringify(body, null, 2));
 
   const { ResultCode, ResultDesc, CallbackMetadata } = callback;
 
@@ -39,9 +46,15 @@ router.post("/validation", (req, res) => {
 });
 
 router.post("/confirmation", (req, res) => {
-  console.log("Confirmation received:", JSON.stringify(req.body, null, 2));
+  const body = req.body;
 
-  const { TransAmount, TransID, MSISDN, BillRefNumber } = req.body;
+  if (!body || Object.keys(body).length === 0) {
+    return res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
+  }
+
+  console.log("Confirmation received:", JSON.stringify(body, null, 2));
+
+  const { TransAmount, TransID, MSISDN, BillRefNumber } = body;
   console.log(`C2B payment: KES ${TransAmount} from ${MSISDN}, ref ${BillRefNumber}, txn ${TransID}`);
 
   // TODO: record this payment in your database
