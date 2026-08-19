@@ -2,6 +2,13 @@ const express = require("express");
 const { db, receiptExists } = require("../db");
 const router = express.Router();
 
+// In-memory order store (shared with daraja.js)
+// In production, use a proper database
+const globalOrders = {};
+
+// Export so daraja.js can access the same object
+module.exports = { router, globalOrders };
+
 router.post("/stk-callback", (req, res) => {
   const body = req.body;
 
@@ -15,32 +22,42 @@ router.post("/stk-callback", (req, res) => {
     return res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
   }
 
-  const { ResultCode, ResultDesc, CallbackMetadata } = callback;
+  const { ResultCode, ResultDesc, CallbackMetadata, MerchantRequestID } = callback;
 
-  if (ResultCode !== 0) {
-    console.log(`Payment FAILED/CANCELLED: ${ResultDesc}`);
-    return res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
-  }
-
+  // Extract metadata
   const items = CallbackMetadata?.Item || [];
   const getVal = (name) => items.find((i) => i.Name === name)?.Value;
 
   const amount = getVal("Amount");
-  const receipt = String(getVal("MpesaReceiptNumber"));
-  const phone = String(getVal("PhoneNumber"));
+  const receipt = String(getVal("MpesaReceiptNumber") || "");
+  const phone = String(getVal("PhoneNumber") || "");
 
-  if (receiptExists(receipt)) {
-    console.warn(`[DUPLICATE] Receipt ${receipt} already processed — ignoring replay`);
-    return res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
+  // --- UPDATE IN-MEMORY ORDER STATUS ---
+  if (MerchantRequestID && globalOrders[MerchantRequestID]) {
+    if (ResultCode === 0) {
+      globalOrders[MerchantRequestID].status = "completed";
+      globalOrders[MerchantRequestID].receipt = receipt;
+      globalOrders[MerchantRequestID].completedAt = new Date().toISOString();
+      console.log(`✅ Order ${MerchantRequestID} completed, receipt: ${receipt}`);
+    } else {
+      globalOrders[MerchantRequestID].status = "failed";
+      globalOrders[MerchantRequestID].error = ResultDesc;
+      console.log(`❌ Order ${MerchantRequestID} failed: ${ResultDesc}`);
+    }
   }
 
-  try {
-    db.prepare(
-      `INSERT INTO transactions (receipt, phone, amount, status) VALUES (?, ?, ?, 'pending')`
-    ).run(receipt, phone, Number(amount));
-    console.log(`Saved pending transaction: KES ${amount} from ${phone}, receipt ${receipt}`);
-  } catch (e) {
-    console.error("Failed to save transaction:", e.message);
+  // Only save to DB if payment was successful
+  if (ResultCode === 0 && receipt && receiptExists && !receiptExists(receipt)) {
+    try {
+      db.prepare(
+        `INSERT INTO transactions (receipt, phone, amount, merchant_request_id, status) VALUES (?, ?, ?, ?, 'completed')`
+      ).run(receipt, phone, Number(amount), MerchantRequestID || null);
+      console.log(`Saved completed transaction: KES ${amount} from ${phone}, receipt ${receipt}`);
+    } catch (e) {
+      console.error("Failed to save transaction:", e.message);
+    }
+  } else if (ResultCode === 0 && receipt && receiptExists && receiptExists(receipt)) {
+    console.warn(`[DUPLICATE] Receipt ${receipt} already processed — ignoring replay`);
   }
 
   return res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
@@ -56,24 +73,30 @@ router.post("/confirmation", (req, res) => {
     return res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
   }
 
-  const { TransAmount, TransID, MSISDN } = body;
+  const { TransAmount, TransID, MSISDN, MerchantRequestID } = body;
   const receipt = String(TransID);
 
-  if (receiptExists(receipt)) {
+  // Update in-memory order if we have the MerchantRequestID
+  if (MerchantRequestID && globalOrders[MerchantRequestID]) {
+    globalOrders[MerchantRequestID].status = "completed";
+    globalOrders[MerchantRequestID].receipt = receipt;
+    globalOrders[MerchantRequestID].completedAt = new Date().toISOString();
+    console.log(`✅ C2B Order ${MerchantRequestID} completed, receipt: ${receipt}`);
+  }
+
+  if (receiptExists && receiptExists(receipt)) {
     console.warn(`[DUPLICATE] C2B receipt ${receipt} already processed — ignoring replay`);
     return res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
   }
 
   try {
     db.prepare(
-      `INSERT INTO transactions (receipt, phone, amount, status) VALUES (?, ?, ?, 'pending')`
-    ).run(receipt, String(MSISDN), Number(TransAmount));
-    console.log(`Saved pending C2B transaction: KES ${TransAmount} from ${MSISDN}`);
+      `INSERT INTO transactions (receipt, phone, amount, merchant_request_id, status) VALUES (?, ?, ?, ?, 'completed')`
+    ).run(receipt, String(MSISDN), Number(TransAmount), MerchantRequestID || null);
+    console.log(`Saved completed C2B transaction: KES ${TransAmount} from ${MSISDN}`);
   } catch (e) {
     console.error("Failed to save C2B transaction:", e.message);
   }
 
   return res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
 });
-
-module.exports = router;
