@@ -3,13 +3,15 @@ const axios = require("axios");
 const { getAccessToken, generateStkPassword } = require("../utils/daraja");
 const cors = require("cors");
 const rateLimit = require("express-rate-limit");
+const { globalOrders } = require("./callback"); // Import shared orders
 
 const router = express.Router();
 
 // ---------- CORS ----------
 const allowedOrigins = [
   "https://webaziairtimehub.vercel.app",
-  "http://localhost:3000", // for local testing
+  "https://webazi-airtime-hub.netlify.app",
+  "http://localhost:3000",
 ];
 router.use(
   cors({
@@ -26,13 +28,10 @@ router.use(
 // ---------- Rate Limiting ----------
 const stkLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 5, // limit each IP to 5 requests per minute
+  max: 10, // limit each IP to 10 requests per minute
   message: "Too many STK push requests, please try again later.",
 });
-router.use("/stk-push", stkLimiter); // apply only to STK endpoint
-
-// ---------- In-memory order store (use a DB in production) ----------
-const orders = {}; // key: MerchantRequestID, value: order object
+router.use("/stk-push", stkLimiter);
 
 // ---------- Helpers ----------
 function formatPhone(phone) {
@@ -52,7 +51,6 @@ function formatPhone(phone) {
 
 // ---------- Routes ----------
 
-// STK Push – initiates M‑PESA prompt
 router.post("/stk-push", async (req, res) => {
   try {
     const { phone, amount, accountRef, description } = req.body;
@@ -98,17 +96,20 @@ router.post("/stk-push", async (req, res) => {
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
-    // Store order with initial status (pending)
+    // Store order in shared globalOrders object
     const respData = response.data;
     if (respData.MerchantRequestID) {
-      orders[respData.MerchantRequestID] = {
+      globalOrders[respData.MerchantRequestID] = {
         merchantRequestId: respData.MerchantRequestID,
         checkoutRequestId: respData.CheckoutRequestID,
         phone: formattedPhone,
         amount: parsedAmount,
-        status: "pending", // will be updated by callback
+        status: "pending",
         timestamp: new Date().toISOString(),
+        receipt: null,
+        completedAt: null,
       };
+      console.log(`📦 Order stored: ${respData.MerchantRequestID} for ${formattedPhone}`);
     }
 
     return res.status(200).json(response.data);
@@ -121,16 +122,18 @@ router.post("/stk-push", async (req, res) => {
   }
 });
 
-// STK Push Query – check status of a previous STK request (for internal use)
+// STK Push Query – check status of a previous STK request
 router.post("/stk-query", async (req, res) => {
   try {
     const { checkoutRequestId } = req.body;
+
     if (!checkoutRequestId) {
       return res.status(400).json({ error: "checkoutRequestId is required" });
     }
 
     const token = await getAccessToken();
     const { password, timestamp } = generateStkPassword();
+
     const { MPESA_BASE_URL, MPESA_SHORTCODE } = process.env;
 
     const payload = {
@@ -146,6 +149,17 @@ router.post("/stk-query", async (req, res) => {
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
+    // Update order status if we have it
+    const respData = response.data;
+    if (respData.MerchantRequestID && globalOrders[respData.MerchantRequestID]) {
+      if (respData.ResultCode === "0") {
+        globalOrders[respData.MerchantRequestID].status = "completed";
+      } else if (respData.ResultCode) {
+        globalOrders[respData.MerchantRequestID].status = "failed";
+        globalOrders[respData.MerchantRequestID].error = respData.ResultDesc;
+      }
+    }
+
     return res.status(200).json(response.data);
   } catch (err) {
     console.error("STK Query error:", err.response?.data || err.message);
@@ -156,7 +170,7 @@ router.post("/stk-query", async (req, res) => {
   }
 });
 
-// NEW: Get order status by merchantRequestId or phone
+// GET order status by merchantRequestId or phone
 router.get("/order-status", (req, res) => {
   const { merchantRequestId, phone } = req.query;
 
@@ -166,12 +180,15 @@ router.get("/order-status", (req, res) => {
 
   let order = null;
   if (merchantRequestId) {
-    order = orders[merchantRequestId] || null;
+    order = globalOrders[merchantRequestId] || null;
   } else if (phone) {
     // Find the most recent order for that phone
-    const phoneOrders = Object.values(orders).filter(o => o.phone === phone);
+    const formattedPhone = formatPhone(phone);
+    if (!formattedPhone) {
+      return res.status(400).json({ error: "Invalid phone number format" });
+    }
+    const phoneOrders = Object.values(globalOrders).filter(o => o.phone === formattedPhone);
     if (phoneOrders.length) {
-      // sort by timestamp descending
       phoneOrders.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
       order = phoneOrders[0];
     }
@@ -181,11 +198,10 @@ router.get("/order-status", (req, res) => {
     return res.status(404).json({ error: "Order not found" });
   }
 
+  // Also check the database for more accurate status
+  // (optional: query the transactions table by receipt or merchant_request_id)
+
   res.json(order);
 });
-
-// (Optional) Endpoint for Daraja callback to update order status
-// You already have a callback route elsewhere – you can update the orders object there
-// Example: when callback receives successful payment, update orders[merchantRequestId].status = 'completed'
 
 module.exports = router;
