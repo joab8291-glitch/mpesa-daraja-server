@@ -3,7 +3,7 @@ const axios = require("axios");
 const { getAccessToken, generateStkPassword } = require("../utils/daraja");
 const cors = require("cors");
 const rateLimit = require("express-rate-limit");
-const { globalOrders } = require("./callback"); // Import shared orders
+const { globalOrders } = require("../utils/orders"); // Import shared orders
 
 const router = express.Router();
 
