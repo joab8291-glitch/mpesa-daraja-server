@@ -7,7 +7,11 @@ const router = express.Router();
 const globalOrders = {};
 
 // Export so daraja.js can access the same object
-module.exports = { router, globalOrders };
+module.exports = router;
+
+// If you still need globalOrders elsewhere, also export it:
+module.exports.globalOrders = globalOrders;
+// or better: keep a separate export
 
 router.post("/stk-callback", (req, res) => {
   const body = req.body;
