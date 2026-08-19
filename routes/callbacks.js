@@ -1,17 +1,8 @@
 const express = require("express");
 const { db, receiptExists } = require("../db");
+const { globalOrders } = require("../utils/orders"); // shared store
+
 const router = express.Router();
-
-// In-memory order store (shared with daraja.js)
-// In production, use a proper database
-const globalOrders = {};
-
-// Export so daraja.js can access the same object
-module.exports = router;
-
-// If you still need globalOrders elsewhere, also export it:
-module.exports.globalOrders = globalOrders;
-// or better: keep a separate export
 
 router.post("/stk-callback", (req, res) => {
   const body = req.body;
@@ -104,3 +95,5 @@ router.post("/confirmation", (req, res) => {
 
   return res.status(200).json({ ResultCode: 0, ResultDesc: "Accepted" });
 });
+
+module.exports = router;
