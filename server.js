@@ -25,7 +25,7 @@ app.get("/health", (req, res) => {
   res.status(200).json({ status: "healthy", timestamp: new Date().toISOString() });
 });
 
-app.use("/callback", stkPushRoutes);
+app.use("/webazi", stkPushRoutes);
 
 app.use("/callback", logCallbackAccess, callbackLimiter, safaricomOnly, callbackRoutes);
 
