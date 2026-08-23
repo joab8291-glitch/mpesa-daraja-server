@@ -3,7 +3,15 @@ const { db } = require("../db");
 const router = express.Router();
 
 router.get("/pending", (req, res) => {
-  const rows = db.prepare(`SELECT * FROM transactions WHERE status = 'pending' ORDER BY created_at ASC`).all();
+  const rows = db
+    .prepare(`
+      SELECT *
+      FROM transactions
+      WHERE status IN ('pending', 'retry')
+      ORDER BY created_at ASC
+    `)
+    .all();
+
   res.json(rows);
 });
 
