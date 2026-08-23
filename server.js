@@ -25,9 +25,9 @@ app.get("/health", (req, res) => {
   res.status(200).json({ status: "healthy", timestamp: new Date().toISOString() });
 });
 
-app.use("/mpesa", stkPushRoutes);
+app.use("/callback", stkPushRoutes);
 
-app.use("/mpesa", logCallbackAccess, callbackLimiter, safaricomOnly, callbackRoutes);
+app.use("/callback", logCallbackAccess, callbackLimiter, safaricomOnly, callbackRoutes);
 
 app.use("/transactions", transactionRoutes);
 
