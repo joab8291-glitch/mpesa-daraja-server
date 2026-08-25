@@ -1,6 +1,7 @@
 const express = require("express");
 const axios = require("axios");
 const { getAccessToken, generateStkPassword } = require("../utils/daraja");
+const { globalOrders } = require("../utils/orders");
 
 const router = express.Router();
 
@@ -111,6 +112,23 @@ router.post("/stk-push", async (req, res) => {
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
+    // Store the order in the shared in-memory map so callbacks.js and
+    // GET /order-status can look it up by MerchantRequestID.
+    const respData = response.data;
+    if (respData.MerchantRequestID) {
+      globalOrders[respData.MerchantRequestID] = {
+        merchantRequestId: respData.MerchantRequestID,
+        checkoutRequestId: respData.CheckoutRequestID,
+        phone: formattedPhone,
+        amount: parsedAmount,
+        status: "pending",
+        timestamp: new Date().toISOString(),
+        receipt: null,
+        completedAt: null,
+      };
+      console.log(`📦 Order stored: ${respData.MerchantRequestID} for ${formattedPhone}`);
+    }
+
     return res.status(200).json(response.data);
   } catch (err) {
     console.error("STK Push error:", err.response?.data || err.message);
@@ -148,6 +166,17 @@ router.post("/stk-query", async (req, res) => {
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
+    // Keep the in-memory order in sync with the query result.
+    const respData = response.data;
+    if (respData.MerchantRequestID && globalOrders[respData.MerchantRequestID]) {
+      if (respData.ResultCode === "0") {
+        globalOrders[respData.MerchantRequestID].status = "completed";
+      } else if (respData.ResultCode) {
+        globalOrders[respData.MerchantRequestID].status = "failed";
+        globalOrders[respData.MerchantRequestID].error = respData.ResultDesc;
+      }
+    }
+
     return res.status(200).json(response.data);
   } catch (err) {
     console.error("STK Query error:", err.response?.data || err.message);
@@ -156,6 +185,37 @@ router.post("/stk-query", async (req, res) => {
       details: err.response?.data || err.message,
     });
   }
+});
+
+// GET order status by merchantRequestId or phone.
+// Protected by the same checkApiKey middleware applied to this whole router.
+router.get("/order-status", (req, res) => {
+  const { merchantRequestId, phone } = req.query;
+
+  if (!merchantRequestId && !phone) {
+    return res.status(400).json({ error: "Provide merchantRequestId or phone" });
+  }
+
+  let order = null;
+  if (merchantRequestId) {
+    order = globalOrders[merchantRequestId] || null;
+  } else if (phone) {
+    const formattedPhone = formatPhone(phone);
+    if (!formattedPhone) {
+      return res.status(400).json({ error: "Invalid phone number format" });
+    }
+    const phoneOrders = Object.values(globalOrders).filter((o) => o.phone === formattedPhone);
+    if (phoneOrders.length) {
+      phoneOrders.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      order = phoneOrders[0];
+    }
+  }
+
+  if (!order) {
+    return res.status(404).json({ error: "Order not found" });
+  }
+
+  res.json(order);
 });
 
 module.exports = router;
