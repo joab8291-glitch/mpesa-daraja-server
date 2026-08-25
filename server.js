@@ -13,7 +13,29 @@ const app = express();
 
 app.set("trust proxy", true);
 
-app.use(cors());
+// ---------- CORS ----------
+// Only these origins may call the API from a browser. Anything else
+// (curl, Postman, the Sambaza worker, server-to-server calls) is unaffected
+// by CORS — this only restricts browser-based requests.
+const allowedOrigins = [
+  "https://webaziairtimehub.vercel.app",
+  "https://webaziairtime.vercel.app",
+  "http://localhost:3000",
+];
+
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      // Allow requests with no origin (curl, Postman, server-to-server, the worker)
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+  })
+);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
