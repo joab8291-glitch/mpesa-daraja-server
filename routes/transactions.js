@@ -9,9 +9,11 @@ const router = express.Router();
 function checkApiKey(req, res, next) {
   const apiKey = process.env.API_KEY;
 
-  // If no API_KEY is set in environment, allow all requests (dev mode)
+  // Fail closed: if API_KEY isn't configured, refuse every request rather
+  // than silently letting them all through.
   if (!apiKey) {
-    return next();
+    console.error("API_KEY is not set — refusing request. Set API_KEY in your environment.");
+    return res.status(500).json({ error: "Server misconfiguration: API key not set" });
   }
 
   const provided = req.headers["x-api-key"];
