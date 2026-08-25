@@ -2,6 +2,33 @@ const express = require("express");
 const { db } = require("../db");
 const router = express.Router();
 
+/**
+ * Simple API key protection — same pattern as routes/stkPush.js
+ * Expects header: x-api-key: YOUR_SECRET
+ */
+function checkApiKey(req, res, next) {
+  const apiKey = process.env.API_KEY;
+
+  // If no API_KEY is set in environment, allow all requests (dev mode)
+  if (!apiKey) {
+    return next();
+  }
+
+  const provided = req.headers["x-api-key"];
+
+  if (!provided || provided !== apiKey) {
+    return res.status(401).json({ error: "Unauthorized – invalid or missing API key" });
+  }
+
+  next();
+}
+
+// Apply API key check to all routes in this file
+router.use(checkApiKey);
+
+// NOTE: The Sambaza worker no longer polls this endpoint — it now reacts to
+// the M-Pesa payment SMS it receives directly on the device. Left in place
+// in case anything else still needs a full pending list.
 router.get("/pending", (req, res) => {
   const rows = db
     .prepare(`
@@ -21,6 +48,19 @@ router.get("/", (req, res) => {
     ? db.prepare(`SELECT * FROM transactions WHERE status = ? ORDER BY created_at DESC`).all(status)
     : db.prepare(`SELECT * FROM transactions ORDER BY created_at DESC`).all();
   res.json(rows);
+});
+
+// NEW: lets the Sambaza worker find a transaction's id from the M-Pesa
+// receipt number it reads out of the SMS notification, so it can still
+// call /progress, /complete, /fail below without polling /pending first.
+router.get("/by-receipt/:receipt", (req, res) => {
+  const txn = db.prepare(`SELECT * FROM transactions WHERE receipt = ?`).get(req.params.receipt);
+
+  if (!txn) {
+    return res.status(404).json({ error: "No transaction found for that receipt" });
+  }
+
+  res.json(txn);
 });
 
 // NEW: called after EVERY successful Sambaza chunk — records cumulative progress
