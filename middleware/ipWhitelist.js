@@ -1,28 +1,38 @@
-// Safaricom's published Daraja callback IP range.
-// Render/most hosts sit behind a proxy, so the real caller IP is in x-forwarded-for,
-// not req.ip directly — we check both to be safe.
+// Safaricom's published Daraja callback IPs (from the Daraja developer portal).
+// This is a discrete list, not a contiguous range — Safaricom's callback
+// senders span more than one subnet, so a min/max range check misses valid IPs.
+const ALLOWED_IPS = new Set([
+  "196.201.214.200",
+  "196.201.214.206",
+  "196.201.213.114",
+  "196.201.214.207",
+  "196.201.214.208",
+  "196.201.213.44",
+  "196.201.212.127",
+  "196.201.212.138",
+  "196.201.212.129",
+  "196.201.212.136",
+  "196.201.212.74",
+  "196.201.212.69",
+]);
 
-function ipToLong(ip) {
-  return ip.split(".").reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
-}
-
-const ALLOWED_RANGE_START = ipToLong("196.201.214.200");
-const ALLOWED_RANGE_END = ipToLong("196.201.214.206");
-
+// Render sits in front of this app as a reverse proxy. Render appends the
+// real connecting client's IP as the LAST entry in X-Forwarded-For — any
+// earlier entries may have been set by the client itself and can't be
+// trusted. Taking the first entry (the old behavior) let a client spoof
+// this check by pre-setting the header themselves.
 function getClientIp(req) {
   const forwarded = req.headers["x-forwarded-for"];
   if (forwarded) {
-    return forwarded.split(",")[0].trim();
+    const ips = forwarded.split(",").map((ip) => ip.trim());
+    return ips[ips.length - 1];
   }
   return req.socket.remoteAddress || req.ip;
 }
 
 function isIpAllowed(ip) {
   const cleanIp = ip.replace("::ffff:", "");
-  if (!/^\d+\.\d+\.\d+\.\d+$/.test(cleanIp)) return false;
-
-  const long = ipToLong(cleanIp);
-  return long >= ALLOWED_RANGE_START && long <= ALLOWED_RANGE_END;
+  return ALLOWED_IPS.has(cleanIp);
 }
 
 function safaricomOnly(req, res, next) {
