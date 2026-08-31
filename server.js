@@ -8,6 +8,8 @@ const transactionRoutes = require("./routes/transactions");
 const { safaricomOnly } = require("./middleware/ipWhitelist");
 const { callbackLimiter } = require("./middleware/rateLimiter");
 const { logCallbackAccess } = require("./middleware/logger");
+const agentsRoutes = require('./backend-addon/agentsRoutes');
+const adminRoutes = require('./backend-addon/adminRoutes');
 
 const app = express();
 
@@ -52,6 +54,10 @@ app.use("/mpesa", stkPushRoutes);
 app.use("/callback", logCallbackAccess, callbackLimiter, safaricomOnly, callbackRoutes);
 
 app.use("/transactions", transactionRoutes);
+
+app.use('/agents', agentsRoutes);
+
+app.use('/admin', adminRoutes);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
