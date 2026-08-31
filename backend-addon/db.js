@@ -5,20 +5,6 @@
  * Postgres version (Supabase free tier) — replaces the original
  * better-sqlite3 file. Storage now survives Render redeploys since
  * it lives in Supabase, not on the service's ephemeral disk.
- *
- * Exported function names/shapes are unchanged from the SQLite
- * version EXCEPT every function is now async (returns a Promise),
- * because `pg` is non-blocking. agentsRoutes.js / adminRoutes.js have
- * been updated to `await` these calls.
- *
- * Setup:
- *   npm install pg
- *   npm uninstall better-sqlite3   (only if nothing else in this repo
- *                                    still uses it — check your root
- *                                    transactions db.js first)
- *   Set DATABASE_URL in Render's env vars to your Supabase connection
- *   string (Project Settings -> Database -> Connection string -> URI,
- *   "Connection pooling" version, port 6543).
  */
 
 const { Pool } = require('pg');
@@ -30,7 +16,7 @@ if (!process.env.DATABASE_URL) {
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }, // Supabase requires SSL; free tier uses a shared cert chain
+  ssl: { rejectUnauthorized: false },
 });
 
 async function query(text, params) {
@@ -67,9 +53,6 @@ async function initSchema() {
     );
   `);
 }
-// Fire on module load; routes only run after require() resolves the
-// module body, but queries below will queue on the pool until this
-// completes since pg handles connection setup internally either way.
 const schemaReady = initSchema().catch((err) => {
   console.error('Failed to initialize agents/payments schema:', err);
   throw err;
@@ -85,16 +68,13 @@ function newKey() {
   return crypto.randomBytes(24).toString('hex');
 }
 
-/** password comes in already sha256'd from the client (see mobile
- * services/agentBackend.ts) — we hash it again server-side so the
- * DB never stores something directly usable against the client hash. */
 function hashClientPassword(clientHash) {
   return sha256('server-pepper:' + clientHash);
 }
 
 function normalizeNumber(n) {
   const digits = String(n).replace(/\D/g, '');
-  return digits.slice(-9); // last 9 digits, matches app's last9Digits()
+  return digits.slice(-9);
 }
 
 function computeSubscriptionEndDate(paidAtIso, months) {
@@ -184,7 +164,6 @@ async function registerAgent({ notificationNumber, passwordHashClient, deviceId,
     );
   } catch (e) {
     if (e.code === '23505') {
-      // unique_violation — race with a concurrent register for the same number
       const err = new Error('Notification number already registered');
       err.code = 'ALREADY_EXISTS';
       throw err;
@@ -207,8 +186,6 @@ async function loginAgent({ notificationNumber, passwordHashClient, deviceId }) 
     err.code = 'BAD_PASSWORD';
     throw err;
   }
-  // Single-device model: logging in from a new device replaces the
-  // registered device (matches the app's one-phone-per-account design).
   await query(`UPDATE agents SET device_id = $1, updated_at = NOW() WHERE id = $2`, [
     deviceId || row.device_id,
     row.id,
@@ -236,7 +213,7 @@ async function recordPayment(agentId, agentKey, { months, method, reference }) {
     throw err;
   }
   const now = new Date().toISOString();
-  const newEnd = computeSubscriptionEndDate(now, Number(months)); // per spec: anchored to payment moment, not stacked off old end
+  const newEnd = computeSubscriptionEndDate(now, Number(months));
   await query(
     `UPDATE agents SET subscription_end_date = $1, last_paid_months = $2, last_paid_at = $3, updated_at = NOW() WHERE id = $4`,
     [newEnd, months, now, row.id]
@@ -249,8 +226,6 @@ async function recordPayment(agentId, agentKey, { months, method, reference }) {
   ]);
   return toPublic(await findById(row.id));
 }
-
-// ---- admin ----
 
 async function listAgents() {
   await schemaReady;

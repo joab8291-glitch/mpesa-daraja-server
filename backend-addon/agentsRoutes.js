@@ -1,16 +1,3 @@
-/**
- * Mount in your existing Express app:
- *   const agentsRoutes = require('./backend-addon/agentsRoutes');
- *   app.use('/agents', agentsRoutes);
- *
- * Called by the Agent app and the Free-access app (services/agentBackend.ts).
- * Never trust build_variant alone for granting free access on sensitive
- * flows — it's set at registration for visibility in the admin dashboard,
- * but actual gating always reads back is_free_access/status from here.
- *
- * NOTE: db.js is now Postgres-backed (async), so every handler below
- * awaits its db call — this is the only change from the SQLite version.
- */
 const express = require('express');
 const db = require('./db');
 

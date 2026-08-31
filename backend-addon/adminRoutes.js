@@ -1,16 +1,3 @@
-/**
- * Mount in your existing Express app:
- *   const adminRoutes = require('./backend-addon/adminRoutes');
- *   app.use('/admin', adminRoutes);
- *
- * Every route here requires header  x-admin-key: <ADMIN_API_KEY>
- * Set ADMIN_API_KEY in Render's environment variables (same place
- * you set your existing Daraja API_KEY). This key is what your Admin
- * app is built with — never ship it in the Agent or Free-access apps.
- *
- * NOTE: db.js is now Postgres-backed (async), so every handler below
- * awaits its db call — this is the only change from the SQLite version.
- */
 const express = require('express');
 const db = require('./db');
 
@@ -35,7 +22,7 @@ router.get('/agents', async (req, res) => {
 });
 
 router.post('/agents/:id/revoke', async (req, res) => {
-  const revoked = req.body?.revoked !== false; // default true
+  const revoked = req.body?.revoked !== false;
   try {
     const agent = await db.adminRevoke(req.params.id, revoked);
     res.json({ ok: true, agent });
@@ -46,7 +33,7 @@ router.post('/agents/:id/revoke', async (req, res) => {
 });
 
 router.post('/agents/:id/free', async (req, res) => {
-  const enabled = req.body?.enabled !== false; // default true
+  const enabled = req.body?.enabled !== false;
   try {
     const agent = await db.adminSetFree(req.params.id, enabled);
     res.json({ ok: true, agent });
