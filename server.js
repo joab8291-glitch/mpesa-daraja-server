@@ -8,10 +8,8 @@ const transactionRoutes = require("./routes/transactions");
 const { safaricomOnly } = require("./middleware/ipWhitelist");
 const { callbackLimiter } = require("./middleware/rateLimiter");
 const { logCallbackAccess } = require("./middleware/logger");
-const agentsRoutes = require('./backend-addon/agentsRoutes');
-const adminRoutes = require('./backend-addon/adminRoutes');
-app.use('/agents', agentsRoutes);
-app.use('/admin', adminRoutes);
+const agentsRoutes = require("./backend-addon/agentsRoutes");
+const adminRoutes = require("./backend-addon/adminRoutes");
 
 const app = express();
 
@@ -42,6 +40,9 @@ app.use(
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+app.use("/agents", agentsRoutes);
+app.use("/admin", adminRoutes);
 
 app.get("/", (req, res) => {
   res.status(200).json({ status: "ok", service: "Webazi Daraja Server", env: process.env.MPESA_ENV || "not set" });
