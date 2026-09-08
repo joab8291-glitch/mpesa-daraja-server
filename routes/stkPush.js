@@ -1,6 +1,6 @@
 const express = require("express");
 const axios = require("axios");
-const { db } = require("../db");
+const { getByMerchantRequestId, getLatestByPhone } = require("../db");
 const { getAccessToken, generateStkPassword } = require("../utils/daraja");
 const { globalOrders } = require("../utils/orders");
 
@@ -192,7 +192,7 @@ router.post("/stk-query", async (req, res) => {
 
 // GET order status by merchantRequestId or phone.
 // Protected by the same checkApiKey middleware applied to this whole router.
-router.get("/order-status", (req, res) => {
+router.get("/order-status", async (req, res) => {
   const { merchantRequestId, phone } = req.query;
 
   if (!merchantRequestId && !phone) {
@@ -203,15 +203,13 @@ router.get("/order-status", (req, res) => {
   // unlike globalOrders which resets to empty on every redeploy/restart.
   let dbRow = null;
   if (merchantRequestId) {
-    dbRow = db.prepare(`SELECT * FROM transactions WHERE merchant_request_id = ?`).get(merchantRequestId);
+    dbRow = await getByMerchantRequestId(merchantRequestId);
   } else if (phone) {
     const formattedPhone = formatPhone(phone);
     if (!formattedPhone) {
       return res.status(400).json({ error: "Invalid phone number format" });
     }
-    dbRow = db
-      .prepare(`SELECT * FROM transactions WHERE phone = ? ORDER BY created_at DESC LIMIT 1`)
-      .get(formattedPhone);
+    dbRow = await getLatestByPhone(formattedPhone);
   }
 
   if (dbRow) {
