@@ -24,6 +24,9 @@ const ALLOWED_IPS = new Set([
 function getClientIp(req) {
   const forwarded = req.headers["x-forwarded-for"];
   if (forwarded) {
+    // TEMP DIAGNOSTIC: log the full raw header so we can see every hop
+    // and determine which position actually holds Safaricom's real IP.
+    console.log(`[IP DEBUG] Full X-Forwarded-For: ${forwarded}`);
     const ips = forwarded.split(",").map((ip) => ip.trim());
     return ips[ips.length - 1];
   }
