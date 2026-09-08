@@ -1,5 +1,14 @@
 const express = require("express");
-const { db } = require("../db");
+const {
+  listByStatuses,
+  listAll,
+  getByReceipt,
+  getById,
+  updateDeliveredAmount,
+  markCompleted,
+  markFailOrRetry,
+  markRequeue,
+} = require("../db");
 const router = express.Router();
 
 /**
@@ -31,32 +40,22 @@ router.use(checkApiKey);
 // NOTE: The Sambaza worker no longer polls this endpoint — it now reacts to
 // the M-Pesa payment SMS it receives directly on the device. Left in place
 // in case anything else still needs a full pending list.
-router.get("/pending", (req, res) => {
-  const rows = db
-    .prepare(`
-      SELECT *
-      FROM transactions
-      WHERE status IN ('pending', 'retry')
-      ORDER BY created_at ASC
-    `)
-    .all();
-
+router.get("/pending", async (req, res) => {
+  const rows = await listByStatuses(["pending", "retry"]);
   res.json(rows);
 });
 
-router.get("/", (req, res) => {
+router.get("/", async (req, res) => {
   const status = req.query.status;
-  const rows = status
-    ? db.prepare(`SELECT * FROM transactions WHERE status = ? ORDER BY created_at DESC`).all(status)
-    : db.prepare(`SELECT * FROM transactions ORDER BY created_at DESC`).all();
+  const rows = await listAll(status);
   res.json(rows);
 });
 
 // NEW: lets the Sambaza worker find a transaction's id from the M-Pesa
 // receipt number it reads out of the SMS notification, so it can still
 // call /progress, /complete, /fail below without polling /pending first.
-router.get("/by-receipt/:receipt", (req, res) => {
-  const txn = db.prepare(`SELECT * FROM transactions WHERE receipt = ?`).get(req.params.receipt);
+router.get("/by-receipt/:receipt", async (req, res) => {
+  const txn = await getByReceipt(req.params.receipt);
 
   if (!txn) {
     return res.status(404).json({ error: "No transaction found for that receipt" });
@@ -67,29 +66,27 @@ router.get("/by-receipt/:receipt", (req, res) => {
 
 // NEW: called after EVERY successful Sambaza chunk — records cumulative progress
 // so a retry never re-dials airtime that was already delivered.
-router.post("/:id/progress", (req, res) => {
+router.post("/:id/progress", async (req, res) => {
   const { deliveredAmount } = req.body || {};
 
   if (typeof deliveredAmount !== "number" || deliveredAmount < 0) {
     return res.status(400).json({ error: "deliveredAmount must be a non-negative number" });
   }
 
-  const txn = db.prepare(`SELECT * FROM transactions WHERE id = ?`).get(req.params.id);
+  const txn = await getById(req.params.id);
   if (!txn) return res.status(404).json({ error: "Transaction not found" });
 
   const newDelivered = Math.max(txn.delivered_amount, deliveredAmount);
 
-  db.prepare(
-    `UPDATE transactions SET delivered_amount = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
-  ).run(newDelivered, req.params.id);
+  await updateDeliveredAmount(req.params.id, newDelivered);
 
   console.log(`Txn #${req.params.id}: progress ${newDelivered}/${txn.amount}`);
   res.json({ ok: true, delivered_amount: newDelivered });
 });
 
-router.post("/:id/complete", (req, res) => {
+router.post("/:id/complete", async (req, res) => {
   // CHANGED: added the safety check below — was previously a straight UPDATE with no guard.
-  const txn = db.prepare(`SELECT * FROM transactions WHERE id = ?`).get(req.params.id);
+  const txn = await getById(req.params.id);
   if (!txn) return res.status(404).json({ error: "Transaction not found" });
 
   if (txn.delivered_amount < txn.amount) {
@@ -100,28 +97,26 @@ router.post("/:id/complete", (req, res) => {
     });
   }
 
-  db.prepare(`UPDATE transactions SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(req.params.id);
+  await markCompleted(req.params.id);
   res.json({ ok: true });
 });
 
-router.post("/:id/fail", (req, res) => {
+router.post("/:id/fail", async (req, res) => {
   const { reason } = req.body || {};
-  const txn = db.prepare(`SELECT * FROM transactions WHERE id = ?`).get(req.params.id);
+  const txn = await getById(req.params.id);
   if (!txn) return res.status(404).json({ error: "Transaction not found" });
 
   const attempts = txn.attempts + 1;
   const newStatus = attempts >= 3 ? "failed" : "retry";
 
-  db.prepare(
-    `UPDATE transactions SET status = ?, attempts = ?, failure_reason = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
-  ).run(newStatus, attempts, reason || null, req.params.id);
+  await markFailOrRetry(req.params.id, newStatus, attempts, reason || null);
 
   // CHANGED: response now also includes delivered_amount for visibility.
   res.json({ ok: true, status: newStatus, attempts, delivered_amount: txn.delivered_amount });
 });
 
-router.post("/:id/requeue", (req, res) => {
-  db.prepare(`UPDATE transactions SET status = 'pending', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(req.params.id);
+router.post("/:id/requeue", async (req, res) => {
+  await markRequeue(req.params.id);
   res.json({ ok: true });
 });
 
