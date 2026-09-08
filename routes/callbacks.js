@@ -190,6 +190,31 @@ router.post("/stk-callback", (req, res) => {
     );
   }
 
+  // NEW: also persist the failure to SQLite, not just the in-memory
+  // globalOrders object — this is what survives a server restart/redeploy,
+  // so GET /mpesa/order-status still works even if Render restarted
+  // between the failed attempt and the customer checking their status.
+  if (MerchantRequestID) {
+    try {
+      db.prepare(
+        `
+        INSERT INTO transactions (
+          receipt, phone, amount, merchant_request_id,
+          delivered_amount, status, attempts, failure_reason
+        )
+        VALUES (NULL, ?, ?, ?, 0, 'failed', 0, ?)
+        `
+      ).run(
+        globalOrders[MerchantRequestID]?.phone || "",
+        globalOrders[MerchantRequestID]?.amount || 0,
+        MerchantRequestID,
+        ResultDesc || "Payment failed"
+      );
+    } catch (error) {
+      console.error("Failed to persist failed STK attempt:", error.message);
+    }
+  }
+
   return res.status(200).json({
     ResultCode: 0,
     ResultDesc: "Accepted",

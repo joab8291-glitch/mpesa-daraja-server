@@ -1,5 +1,6 @@
 const express = require("express");
 const axios = require("axios");
+const { db } = require("../db");
 const { getAccessToken, generateStkPassword } = require("../utils/daraja");
 const { globalOrders } = require("../utils/orders");
 
@@ -198,14 +199,41 @@ router.get("/order-status", (req, res) => {
     return res.status(400).json({ error: "Provide merchantRequestId or phone" });
   }
 
-  let order = null;
+  // Check the durable database FIRST — this survives server restarts,
+  // unlike globalOrders which resets to empty on every redeploy/restart.
+  let dbRow = null;
   if (merchantRequestId) {
-    order = globalOrders[merchantRequestId] || null;
+    dbRow = db.prepare(`SELECT * FROM transactions WHERE merchant_request_id = ?`).get(merchantRequestId);
   } else if (phone) {
     const formattedPhone = formatPhone(phone);
     if (!formattedPhone) {
       return res.status(400).json({ error: "Invalid phone number format" });
     }
+    dbRow = db
+      .prepare(`SELECT * FROM transactions WHERE phone = ? ORDER BY created_at DESC LIMIT 1`)
+      .get(formattedPhone);
+  }
+
+  if (dbRow) {
+    return res.json({
+      merchantRequestId: dbRow.merchant_request_id,
+      phone: dbRow.phone,
+      amount: dbRow.amount,
+      status: dbRow.status,
+      receipt: dbRow.receipt,
+      error: dbRow.failure_reason,
+      completedAt: dbRow.updated_at,
+    });
+  }
+
+  // Fall back to the in-memory cache — this only covers orders where the
+  // callback hasn't arrived yet (still genuinely "pending"), which is the
+  // one case the database can't yet answer.
+  let order = null;
+  if (merchantRequestId) {
+    order = globalOrders[merchantRequestId] || null;
+  } else if (phone) {
+    const formattedPhone = formatPhone(phone);
     const phoneOrders = Object.values(globalOrders).filter((o) => o.phone === formattedPhone);
     if (phoneOrders.length) {
       phoneOrders.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
