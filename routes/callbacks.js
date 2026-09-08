@@ -1,5 +1,5 @@
 const express = require("express");
-const { db, receiptExists } = require("../db");
+const { receiptExists, insertTransaction } = require("../db");
 const { globalOrders } = require("../utils/orders");
 
 const router = express.Router();
@@ -15,7 +15,7 @@ const router = express.Router();
  * The USSD app changes the transaction to "completed" only
  * after the airtime delivery process succeeds.
  */
-router.post("/stk-callback", (req, res) => {
+router.post("/stk-callback", async (req, res) => {
   const body = req.body;
 
   if (!body || Object.keys(body).length === 0) {
@@ -96,7 +96,7 @@ router.post("/stk-callback", (req, res) => {
     }
 
     // Prevent duplicate callback/replay.
-    if (receiptExists(receipt)) {
+    if (await receiptExists(receipt)) {
       console.warn(
         `[DUPLICATE] Receipt ${receipt} already exists — ignoring replay`
       );
@@ -119,26 +119,13 @@ router.post("/stk-callback", (req, res) => {
        *
        * which is what the Webazi USSD app polls.
        */
-      db.prepare(
-        `
-        INSERT INTO transactions (
-          receipt,
-          phone,
-          amount,
-          merchant_request_id,
-          delivered_amount,
-          status,
-          attempts,
-          failure_reason
-        )
-        VALUES (?, ?, ?, ?, 0, 'pending', 0, NULL)
-        `
-      ).run(
+      await insertTransaction({
         receipt,
         phone,
-        Number(amount),
-        MerchantRequestID || null
-      );
+        amount: Number(amount),
+        merchantRequestId: MerchantRequestID || null,
+        status: "pending",
+      });
 
       console.log(
         `✅ PAYMENT CONFIRMED → USSD QUEUE`
@@ -190,26 +177,20 @@ router.post("/stk-callback", (req, res) => {
     );
   }
 
-  // NEW: also persist the failure to SQLite, not just the in-memory
-  // globalOrders object — this is what survives a server restart/redeploy,
-  // so GET /mpesa/order-status still works even if Render restarted
-  // between the failed attempt and the customer checking their status.
+  // Persist the failure to Supabase, not just the in-memory globalOrders
+  // object — this is what survives a server restart/redeploy, so
+  // GET /mpesa/order-status still works even if Render restarted between
+  // the failed attempt and the customer checking their status.
   if (MerchantRequestID) {
     try {
-      db.prepare(
-        `
-        INSERT INTO transactions (
-          receipt, phone, amount, merchant_request_id,
-          delivered_amount, status, attempts, failure_reason
-        )
-        VALUES (NULL, ?, ?, ?, 0, 'failed', 0, ?)
-        `
-      ).run(
-        globalOrders[MerchantRequestID]?.phone || "",
-        globalOrders[MerchantRequestID]?.amount || 0,
-        MerchantRequestID,
-        ResultDesc || "Payment failed"
-      );
+      await insertTransaction({
+        receipt: null,
+        phone: globalOrders[MerchantRequestID]?.phone || "",
+        amount: globalOrders[MerchantRequestID]?.amount || 0,
+        merchantRequestId: MerchantRequestID,
+        status: "failed",
+        failureReason: ResultDesc || "Payment failed",
+      });
     } catch (error) {
       console.error("Failed to persist failed STK attempt:", error.message);
     }
@@ -239,7 +220,7 @@ router.post("/validation", (req, res) => {
  * A confirmed C2B payment is also placed into the
  * USSD delivery queue as "pending".
  */
-router.post("/confirmation", (req, res) => {
+router.post("/confirmation", async (req, res) => {
   const body = req.body;
 
   if (!body || Object.keys(body).length === 0) {
@@ -276,7 +257,7 @@ router.post("/confirmation", (req, res) => {
     });
   }
 
-  if (receiptExists(receipt)) {
+  if (await receiptExists(receipt)) {
     console.warn(
       `[DUPLICATE] C2B receipt ${receipt} already exists`
     );
@@ -295,26 +276,13 @@ router.post("/confirmation", (req, res) => {
   }
 
   try {
-    db.prepare(
-      `
-      INSERT INTO transactions (
-        receipt,
-        phone,
-        amount,
-        merchant_request_id,
-        delivered_amount,
-        status,
-        attempts,
-        failure_reason
-      )
-      VALUES (?, ?, ?, ?, 0, 'pending', 0, NULL)
-      `
-    ).run(
+    await insertTransaction({
       receipt,
       phone,
       amount,
-      MerchantRequestID || null
-    );
+      merchantRequestId: MerchantRequestID || null,
+      status: "pending",
+    });
 
     console.log(
       `✅ C2B PAYMENT CONFIRMED → USSD QUEUE`
