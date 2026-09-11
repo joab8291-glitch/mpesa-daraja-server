@@ -14,6 +14,7 @@ const ALLOWED_IPS = new Set([
   "196.201.212.136",
   "196.201.212.74",
   "196.201.212.69",
+  "154.159.113.171",
 ]);
 
 // Confirmed from production X-Forwarded-For captures on 2026-09-08:
