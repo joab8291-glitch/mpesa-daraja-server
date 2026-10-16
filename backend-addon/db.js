@@ -53,10 +53,18 @@ async function initSchema() {
     );
   `);
 }
-const schemaReady = initSchema().catch((err) => {
-  console.error('Failed to initialize agents/payments schema:', err);
-  throw err;
-});
+
+let schemaPromise = null;
+function schemaReady() {
+  if (!schemaPromise) {
+    schemaPromise = initSchema().catch((err) => {
+      console.error("Failed to initialize schema:", err.message);
+      schemaPromise = null; // retry on next request
+      throw err;
+    });
+  }
+  return schemaPromise;
+}
 
 function sha256(s) {
   return crypto.createHash('sha256').update(String(s)).digest('hex');
@@ -121,7 +129,7 @@ function toPublic(agent) {
 }
 
 async function findByNumber(notificationNumber) {
-  await schemaReady;
+  await schemaReady();
   const { rows } = await query('SELECT * FROM agents WHERE notification_number = $1', [
     normalizeNumber(notificationNumber),
   ]);
@@ -129,13 +137,13 @@ async function findByNumber(notificationNumber) {
 }
 
 async function findById(id) {
-  await schemaReady;
+  await schemaReady();
   const { rows } = await query('SELECT * FROM agents WHERE id = $1', [id]);
   return rows[0] || null;
 }
 
 async function registerAgent({ notificationNumber, passwordHashClient, deviceId, buildVariant }) {
-  await schemaReady;
+  await schemaReady();
   const existing = await findByNumber(notificationNumber);
   if (existing) {
     const err = new Error('Notification number already registered');
@@ -174,7 +182,7 @@ async function registerAgent({ notificationNumber, passwordHashClient, deviceId,
 }
 
 async function loginAgent({ notificationNumber, passwordHashClient, deviceId }) {
-  await schemaReady;
+  await schemaReady();
   const row = await findByNumber(notificationNumber);
   if (!row) {
     const err = new Error('No account for this number');
@@ -194,7 +202,7 @@ async function loginAgent({ notificationNumber, passwordHashClient, deviceId }) 
 }
 
 async function getStatus(agentId, agentKey) {
-  await schemaReady;
+  await schemaReady();
   const row = await findById(agentId);
   if (!row || row.agent_key !== agentKey) {
     const err = new Error('Not found');
@@ -205,7 +213,7 @@ async function getStatus(agentId, agentKey) {
 }
 
 async function recordPayment(agentId, agentKey, { months, method, reference }) {
-  await schemaReady;
+  await schemaReady();
   const row = await findById(agentId);
   if (!row || row.agent_key !== agentKey) {
     const err = new Error('Not found');
@@ -228,25 +236,25 @@ async function recordPayment(agentId, agentKey, { months, method, reference }) {
 }
 
 async function listAgents() {
-  await schemaReady;
+  await schemaReady();
   const { rows } = await query('SELECT * FROM agents ORDER BY created_at DESC');
   return rows.map(toPublic);
 }
 
 async function adminRevoke(agentId, revoked) {
-  await schemaReady;
+  await schemaReady();
   await query(`UPDATE agents SET revoked = $1, updated_at = NOW() WHERE id = $2`, [!!revoked, agentId]);
   return toPublic(await findById(agentId));
 }
 
 async function adminSetFree(agentId, enabled) {
-  await schemaReady;
+  await schemaReady();
   await query(`UPDATE agents SET is_free_access = $1, updated_at = NOW() WHERE id = $2`, [!!enabled, agentId]);
   return toPublic(await findById(agentId));
 }
 
 async function adminExtend(agentId, days) {
-  await schemaReady;
+  await schemaReady();
   const row = await findById(agentId);
   const base =
     row.subscription_end_date && new Date(row.subscription_end_date) > new Date()
@@ -261,7 +269,7 @@ async function adminExtend(agentId, days) {
 }
 
 async function adminDelete(agentId) {
-  await schemaReady;
+  await schemaReady();
   await query('DELETE FROM payments WHERE agent_id = $1', [agentId]);
   await query('DELETE FROM agents WHERE id = $1', [agentId]);
 }
