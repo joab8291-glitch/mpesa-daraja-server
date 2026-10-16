@@ -49,19 +49,26 @@ async function initSchema() {
   // database will always get the right shape from the statement above.
 }
 
-const schemaReady = initSchema().catch((err) => {
-  console.error("Failed to initialize transactions schema:", err);
-  throw err;
-});
+let schemaPromise = null;
+function schemaReady() {
+  if (!schemaPromise) {
+    schemaPromise = initSchema().catch((err) => {
+      console.error("Failed to initialize schema:", err.message);
+      schemaPromise = null; // retry on next request
+      throw err;
+    });
+  }
+  return schemaPromise;
+}
 
 async function receiptExists(receipt) {
-  await schemaReady;
+  await schemaReady();
   const { rows } = await query("SELECT id FROM transactions WHERE receipt = $1", [receipt]);
   return rows.length > 0;
 }
 
 async function insertTransaction({ receipt, phone, amount, merchantRequestId, status, failureReason }) {
-  await schemaReady;
+  await schemaReady();
   await query(
     `INSERT INTO transactions (
       receipt, phone, amount, merchant_request_id,
@@ -73,7 +80,7 @@ async function insertTransaction({ receipt, phone, amount, merchantRequestId, st
 }
 
 async function getByMerchantRequestId(merchantRequestId) {
-  await schemaReady;
+  await schemaReady();
   const { rows } = await query(
     "SELECT * FROM transactions WHERE merchant_request_id = $1",
     [merchantRequestId]
@@ -82,7 +89,7 @@ async function getByMerchantRequestId(merchantRequestId) {
 }
 
 async function getLatestByPhone(phone) {
-  await schemaReady;
+  await schemaReady();
   const { rows } = await query(
     "SELECT * FROM transactions WHERE phone = $1 ORDER BY created_at DESC LIMIT 1",
     [phone]
@@ -91,19 +98,19 @@ async function getLatestByPhone(phone) {
 }
 
 async function getByReceipt(receipt) {
-  await schemaReady;
+  await schemaReady();
   const { rows } = await query("SELECT * FROM transactions WHERE receipt = $1", [receipt]);
   return rows[0] || null;
 }
 
 async function getById(id) {
-  await schemaReady;
+  await schemaReady();
   const { rows } = await query("SELECT * FROM transactions WHERE id = $1", [id]);
   return rows[0] || null;
 }
 
 async function listByStatuses(statuses) {
-  await schemaReady;
+  await schemaReady();
   const { rows } = await query(
     `SELECT * FROM transactions WHERE status = ANY($1) ORDER BY created_at ASC`,
     [statuses]
@@ -112,7 +119,7 @@ async function listByStatuses(statuses) {
 }
 
 async function listAll(status) {
-  await schemaReady;
+  await schemaReady();
   const { rows } = status
     ? await query(`SELECT * FROM transactions WHERE status = $1 ORDER BY created_at DESC`, [status])
     : await query(`SELECT * FROM transactions ORDER BY created_at DESC`);
@@ -120,7 +127,7 @@ async function listAll(status) {
 }
 
 async function updateDeliveredAmount(id, deliveredAmount) {
-  await schemaReady;
+  await schemaReady();
   await query(
     `UPDATE transactions SET delivered_amount = $1, updated_at = NOW() WHERE id = $2`,
     [deliveredAmount, id]
@@ -128,12 +135,12 @@ async function updateDeliveredAmount(id, deliveredAmount) {
 }
 
 async function markCompleted(id) {
-  await schemaReady;
+  await schemaReady();
   await query(`UPDATE transactions SET status = 'completed', updated_at = NOW() WHERE id = $1`, [id]);
 }
 
 async function markFailOrRetry(id, status, attempts, reason) {
-  await schemaReady;
+  await schemaReady();
   await query(
     `UPDATE transactions SET status = $1, attempts = $2, failure_reason = $3, updated_at = NOW() WHERE id = $4`,
     [status, attempts, reason || null, id]
@@ -141,7 +148,7 @@ async function markFailOrRetry(id, status, attempts, reason) {
 }
 
 async function markRequeue(id) {
-  await schemaReady;
+  await schemaReady();
   await query(`UPDATE transactions SET status = 'pending', updated_at = NOW() WHERE id = $1`, [id]);
 }
 
