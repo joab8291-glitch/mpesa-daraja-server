@@ -67,7 +67,7 @@ function checkApiKey(req, res, next) {
       "https://webaziairtimehub.vercel.app",
       "http://localhost:3000",
     ]);
-    if (origin && !allowedOrigins.has(origin)) {
+    if (!origin || !allowedOrigins.has(origin)) {
       return res.status(403).json({ error: "Origin not allowed" });
     }
     return next();
