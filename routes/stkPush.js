@@ -60,7 +60,7 @@ function checkApiKey(req, res, next) {
   // The static customer site cannot keep a secret API key. The public STK
   // endpoint is instead protected by strict validation, origin checks and
   // per-IP rate limiting. Administrative/status routes still require API_KEY.
-  if (req.path === "/stk-push") {
+  if (req.path === "/stk-push" || req.path === "/stk-query") {
     const origin = req.get("origin");
     const allowedOrigins = new Set([
       "https://webaziairtime.vercel.app",
@@ -318,7 +318,7 @@ router.post("/stk-push", publicStkLimiter, async (req, res) => {
 });
 
 // STK Push Query – check status of a previous STK request
-router.post("/stk-query", async (req, res) => {
+router.post("/stk-query", publicStkLimiter, async (req, res) => {
   try {
     const { checkoutRequestId } = req.body;
 
