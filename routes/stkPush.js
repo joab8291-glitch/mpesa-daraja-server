@@ -149,7 +149,9 @@ router.post("/stk-push", publicStkLimiter, async (req, res) => {
           ? "Payment request outcome is not yet known. Do not submit another payment; check your M-PESA messages or track this order."
           : "This request was already submitted. Check its status instead of creating another payment.",
       };
-      return res.status(["accepted", "payment_confirmed"].includes(attempt.status) ? 200 : 202).json(knownResponse);
+      const existingStatus = ["accepted", "payment_confirmed"].includes(attempt.status) ? 200
+        : attempt.status === "failed" || attempt.status === "rejected" ? 409 : 202;
+      return res.status(existingStatus).json(knownResponse);
     }
 
     const {
@@ -171,6 +173,10 @@ router.post("/stk-push", publicStkLimiter, async (req, res) => {
     ].filter(([, value]) => !value).map(([name]) => name);
 
     if (missing.length) {
+      await updateStkAttempt(requestId, {
+        status: "failed",
+        failure_reason: "M-PESA configuration is incomplete",
+      });
       console.error("[MPESA][CONFIG] Missing required environment variables:", missing.join(", "));
       return res.status(500).json({
         error: "M-PESA configuration is incomplete",
@@ -185,6 +191,10 @@ router.post("/stk-push", publicStkLimiter, async (req, res) => {
         throw new Error("MPESA_BASE_URL must be the base URL only");
       }
     } catch (configError) {
+      await updateStkAttempt(requestId, {
+        status: "failed",
+        failure_reason: "Invalid M-PESA base URL configuration",
+      });
       console.error("[MPESA][CONFIG] MPESA_BASE_URL must be a valid base URL, e.g. https://api.safaricom.co.ke");
       return res.status(500).json({ error: "Invalid M-PESA base URL configuration" });
     }
