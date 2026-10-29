@@ -65,6 +65,7 @@ router.use(checkApiKey);
 // ---------- Routes ----------
 
 router.post("/stk-push", async (req, res) => {
+  let stage = "request_validation";
   try {
     const { phone, amount, accountRef, description } = req.body;
 
@@ -86,15 +87,48 @@ router.post("/stk-push", async (req, res) => {
       return res.status(400).json({ error: "amount must be a positive number" });
     }
 
-    const token = await getAccessToken();
-    const { password, timestamp } = generateStkPassword();
-
     const {
       MPESA_BASE_URL,
       MPESA_SHORTCODE,
       MPESA_CALLBACK_URL,
+      MPESA_PASSKEY,
+      MPESA_CONSUMER_KEY,
+      MPESA_CONSUMER_SECRET,
     } = process.env;
 
+    const missing = [
+      ["MPESA_BASE_URL", MPESA_BASE_URL],
+      ["MPESA_SHORTCODE", MPESA_SHORTCODE],
+      ["MPESA_CALLBACK_URL", MPESA_CALLBACK_URL],
+      ["MPESA_PASSKEY", MPESA_PASSKEY],
+      ["MPESA_CONSUMER_KEY", MPESA_CONSUMER_KEY],
+      ["MPESA_CONSUMER_SECRET", MPESA_CONSUMER_SECRET],
+    ].filter(([, value]) => !value).map(([name]) => name);
+
+    if (missing.length) {
+      console.error("[MPESA][CONFIG] Missing required environment variables:", missing.join(", "));
+      return res.status(500).json({
+        error: "M-PESA configuration is incomplete",
+        missing,
+      });
+    }
+
+    let baseUrl;
+    try {
+      baseUrl = new URL(MPESA_BASE_URL);
+      if (!["https:", "http:"].includes(baseUrl.protocol) || baseUrl.pathname !== "/" || baseUrl.search || baseUrl.hash) {
+        throw new Error("MPESA_BASE_URL must be the base URL only");
+      }
+    } catch (configError) {
+      console.error("[MPESA][CONFIG] MPESA_BASE_URL must be a valid base URL, e.g. https://api.safaricom.co.ke");
+      return res.status(500).json({ error: "Invalid M-PESA base URL configuration" });
+    }
+
+    stage = "oauth";
+    const token = await getAccessToken();
+    const { password, timestamp } = generateStkPassword();
+
+    stage = "stk_push";
     const payload = {
       BusinessShortCode: MPESA_SHORTCODE,
       Password: password,
@@ -110,9 +144,9 @@ router.post("/stk-push", async (req, res) => {
     };
 
     const response = await axios.post(
-      `${MPESA_BASE_URL}/mpesa/stkpush/v1/processrequest`,
+      `${baseUrl.origin}/mpesa/stkpush/v1/processrequest`,
       payload,
-      { headers: { Authorization: `Bearer ${token}` } }
+      { headers: { Authorization: `Bearer ${token}` }, timeout: 20000 }
     );
 
     // Store the order in the shared in-memory map so callbacks.js and
@@ -134,10 +168,33 @@ router.post("/stk-push", async (req, res) => {
 
     return res.status(200).json(response.data);
   } catch (err) {
-    console.error("STK Push error:", err.response?.data || err.message);
-    return res.status(500).json({
+    const status = err.response?.status || null;
+    const responseData = err.response?.data;
+    const safeResponse = responseData && typeof responseData === "object"
+      ? {
+          requestId: responseData.requestId,
+          errorCode: responseData.errorCode,
+          errorMessage: responseData.errorMessage,
+          ResponseCode: responseData.ResponseCode,
+          ResponseDescription: responseData.ResponseDescription,
+          CustomerMessage: responseData.CustomerMessage,
+        }
+      : undefined;
+
+    console.error("[MPESA][STK_INITIATION_FAILED]", {
+      stage,
+      httpStatus: status,
+      errorCode: err.code || null,
+      message: err.message,
+      safaricomResponse: safeResponse || null,
+    });
+
+    return res.status(502).json({
       error: "Failed to initiate STK Push",
-      details: err.response?.data || err.message,
+      stage,
+      upstreamStatus: status,
+      upstreamCode: err.code || null,
+      details: safeResponse || "Upstream connection failed; check server logs for the stage and error code.",
     });
   }
 });
