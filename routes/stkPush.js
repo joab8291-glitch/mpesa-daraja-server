@@ -149,7 +149,7 @@ router.post("/stk-push", publicStkLimiter, async (req, res) => {
           ? "Payment request outcome is not yet known. Do not submit another payment; check your M-PESA messages or track this order."
           : "This request was already submitted. Check its status instead of creating another payment.",
       };
-      return res.status(attempt.status === "accepted" ? 200 : 202).json(knownResponse);
+      return res.status(["accepted", "payment_confirmed"].includes(attempt.status) ? 200 : 202).json(knownResponse);
     }
 
     const {
