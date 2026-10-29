@@ -1,5 +1,5 @@
 const express = require("express");
-const { receiptExists, insertTransaction } = require("../db");
+const { receiptExists, insertTransaction, updateStkAttemptByDarajaIds } = require("../db");
 const { globalOrders } = require("../utils/orders");
 
 const router = express.Router();
@@ -72,6 +72,16 @@ router.post("/stk-callback", async (req, res) => {
   // ---------------------------------------------------------
 
   if (ResultCode === 0) {
+    try {
+      await updateStkAttemptByDarajaIds({
+        merchantRequestId: MerchantRequestID,
+        checkoutRequestId: CheckoutRequestID,
+        patch: { status: "payment_confirmed", response_code: "0", failure_reason: null },
+      });
+    } catch (error) {
+      console.error("[MPESA][CALLBACK_ATTEMPT_UPDATE_FAILED]", error.message);
+    }
+
     if (!receipt || !phone || amount == null) {
       console.error(
         "❌ Successful STK callback is missing receipt, phone or amount"
@@ -166,6 +176,20 @@ router.post("/stk-callback", async (req, res) => {
   console.warn(
     `❌ STK payment failed: ${ResultDesc || "Unknown error"}`
   );
+
+  try {
+    await updateStkAttemptByDarajaIds({
+      merchantRequestId: MerchantRequestID,
+      checkoutRequestId: CheckoutRequestID,
+      patch: {
+        status: "failed",
+        response_code: String(ResultCode),
+        failure_reason: ResultDesc || "Payment failed",
+      },
+    });
+  } catch (error) {
+    console.error("[MPESA][CALLBACK_ATTEMPT_UPDATE_FAILED]", error.message);
+  }
 
   if (MerchantRequestID && globalOrders[MerchantRequestID]) {
     globalOrders[MerchantRequestID].status = "failed";
