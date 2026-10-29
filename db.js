@@ -192,7 +192,7 @@ async function updateStkAttempt(requestId, patch = {}) {
   const allowed = ["status", "merchant_request_id", "checkout_request_id", "response_code", "failure_reason"];
   const entries = Object.entries(patch).filter(([key, value]) => allowed.includes(key) && value !== undefined);
   if (!entries.length) return getStkAttemptByRequestId(requestId);
-  const assignments = entries.map(([key], i) => `${key} = ${i + 2}`);
+  const assignments = entries.map(([key], i) => `${key} = $${i + 2}`);
   assignments.push("updated_at = NOW()");
   const values = [requestId, ...entries.map(([, value]) => value)];
   const { rows } = await query(
@@ -208,7 +208,7 @@ async function updateStkAttemptByDarajaIds({ merchantRequestId, checkoutRequestI
   const allowed = ["status", "response_code", "failure_reason"];
   const entries = Object.entries(patch || {}).filter(([key, value]) => allowed.includes(key) && value !== undefined);
   if (!entries.length) return null;
-  const assignments = entries.map(([key], i) => `${key} = ${i + 3}`);
+  const assignments = entries.map(([key], i) => `${key} = $${i + 3}`);
   assignments.push("updated_at = NOW()");
   const values = [merchantRequestId || null, checkoutRequestId || null, ...entries.map(([, value]) => value)];
   const { rows } = await query(
