@@ -28,6 +28,21 @@ async function query(text, params) {
 
 async function initSchema() {
   await query(`
+    CREATE TABLE IF NOT EXISTS stk_attempts (
+      request_id TEXT PRIMARY KEY,
+      phone TEXT NOT NULL,
+      amount REAL NOT NULL,
+      account_ref TEXT,
+      status TEXT NOT NULL DEFAULT 'initiating',
+      merchant_request_id TEXT UNIQUE,
+      checkout_request_id TEXT UNIQUE,
+      response_code TEXT,
+      failure_reason TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await query(`
     CREATE TABLE IF NOT EXISTS transactions (
       id SERIAL PRIMARY KEY,
       receipt TEXT UNIQUE,
@@ -152,7 +167,65 @@ async function markRequeue(id) {
   await query(`UPDATE transactions SET status = 'pending', updated_at = NOW() WHERE id = $1`, [id]);
 }
 
+async function createStkAttempt({ requestId, phone, amount, accountRef }) {
+  await schemaReady();
+  const { rows } = await query(
+    `INSERT INTO stk_attempts (request_id, phone, amount, account_ref, status)
+     VALUES ($1, $2, $3, $4, 'initiating')
+     ON CONFLICT (request_id) DO NOTHING
+     RETURNING *`,
+    [requestId, phone, amount, accountRef || null]
+  );
+  if (rows[0]) return { row: rows[0], created: true };
+  const existing = await getStkAttemptByRequestId(requestId);
+  return { row: existing, created: false };
+}
+
+async function getStkAttemptByRequestId(requestId) {
+  await schemaReady();
+  const { rows } = await query("SELECT * FROM stk_attempts WHERE request_id = $1", [requestId]);
+  return rows[0] || null;
+}
+
+async function updateStkAttempt(requestId, patch = {}) {
+  await schemaReady();
+  const allowed = ["status", "merchant_request_id", "checkout_request_id", "response_code", "failure_reason"];
+  const entries = Object.entries(patch).filter(([key, value]) => allowed.includes(key) && value !== undefined);
+  if (!entries.length) return getStkAttemptByRequestId(requestId);
+  const assignments = entries.map(([key], i) => `${key} = ${i + 2}`);
+  assignments.push("updated_at = NOW()");
+  const values = [requestId, ...entries.map(([, value]) => value)];
+  const { rows } = await query(
+    `UPDATE stk_attempts SET ${assignments.join(", ")} WHERE request_id = $1 RETURNING *`,
+    values
+  );
+  return rows[0] || null;
+}
+
+async function updateStkAttemptByDarajaIds({ merchantRequestId, checkoutRequestId, patch }) {
+  await schemaReady();
+  if (!merchantRequestId && !checkoutRequestId) return null;
+  const allowed = ["status", "response_code", "failure_reason"];
+  const entries = Object.entries(patch || {}).filter(([key, value]) => allowed.includes(key) && value !== undefined);
+  if (!entries.length) return null;
+  const assignments = entries.map(([key], i) => `${key} = ${i + 3}`);
+  assignments.push("updated_at = NOW()");
+  const values = [merchantRequestId || null, checkoutRequestId || null, ...entries.map(([, value]) => value)];
+  const { rows } = await query(
+    `UPDATE stk_attempts SET ${assignments.join(", ")}
+     WHERE (($1::text IS NOT NULL AND merchant_request_id = $1)
+         OR ($2::text IS NOT NULL AND checkout_request_id = $2))
+     RETURNING *`,
+    values
+  );
+  return rows[0] || null;
+}
+
 module.exports = {
+  createStkAttempt,
+  getStkAttemptByRequestId,
+  updateStkAttempt,
+  updateStkAttemptByDarajaIds,
   receiptExists,
   insertTransaction,
   getByMerchantRequestId,
