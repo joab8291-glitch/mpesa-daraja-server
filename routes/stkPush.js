@@ -1,6 +1,7 @@
 const express = require("express");
 const axios = require("axios");
 const crypto = require("crypto");
+const https = require("https");
 const rateLimit = require("express-rate-limit");
 const {
   createStkAttempt,
@@ -13,6 +14,9 @@ const { getAccessToken, generateStkPassword } = require("../utils/daraja");
 const { globalOrders } = require("../utils/orders");
 
 const router = express.Router();
+
+const STK_PUSH_TIMEOUT_MS = Number.parseInt(process.env.STK_PUSH_TIMEOUT_MS, 10) || 60000;
+const stkHttpsAgent = new https.Agent({ keepAlive: false });
 
 const publicStkLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
@@ -224,7 +228,17 @@ router.post("/stk-push", publicStkLimiter, async (req, res) => {
     const response = await axios.post(
       `${baseUrl.origin}/mpesa/stkpush/v1/processrequest`,
       payload,
-      { headers: { Authorization: `Bearer ${token}` }, timeout: 20000 }
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        // Safaricom's STK endpoint can take well over 20s to answer. Production
+        // logs show requests aborted at exactly 20s with no response, leaving
+        // paid-for-prompt attempts in "outcome_unknown". Stay under Render's
+        // ~100s proxy limit but give Daraja real time to respond.
+        timeout: STK_PUSH_TIMEOUT_MS,
+        // Fresh connection per STK request: avoids reusing a stale keep-alive
+        // socket that Safaricom's edge may have silently dropped.
+        httpsAgent: stkHttpsAgent,
+      }
     );
     upstreamMs = Date.now() - upstreamStartedAt;
 
@@ -351,7 +365,7 @@ router.post("/stk-query", publicStkLimiter, async (req, res) => {
     const response = await axios.post(
       `${MPESA_BASE_URL}/mpesa/stkpushquery/v1/query`,
       payload,
-      { headers: { Authorization: `Bearer ${token}` } }
+      { headers: { Authorization: `Bearer ${token}` }, timeout: 30000 }
     );
 
     // Keep the in-memory order in sync with the query result.
