@@ -15,7 +15,7 @@ const { globalOrders } = require("../utils/orders");
 
 const router = express.Router();
 
-const STK_PUSH_TIMEOUT_MS = Number.parseInt(process.env.STK_PUSH_TIMEOUT_MS, 10) || 60000;
+const STK_PUSH_TIMEOUT_MS = Number.parseInt(process.env.STK_PUSH_TIMEOUT_MS, 10) || 30000;
 const stkHttpsAgent = new https.Agent({ keepAlive: false });
 
 const publicStkLimiter = rateLimit({
