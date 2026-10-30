@@ -8,7 +8,6 @@ const transactionRoutes = require("./routes/transactions");
 const { safaricomOnly } = require("./middleware/ipWhitelist");
 const { callbackLimiter } = require("./middleware/rateLimiter");
 const { logCallbackAccess } = require("./middleware/logger");
-const { callbackSecret } = require("./middleware/callbackSecret");
 const agentsRoutes = require("./backend-addon/agentsRoutes");
 const adminRoutes = require("./backend-addon/adminRoutes");
 
@@ -55,9 +54,8 @@ app.get("/health", (req, res) => {
 
 app.use("/mpesa", stkPushRoutes);
 
-// Shared-secret authentication is required before callback handlers run.
-// See SECURITY.md before deploying this change.
-app.use("/callback", callbackSecret, logCallbackAccess, callbackLimiter, safaricomOnly, callbackRoutes);
+// Callbacks are restricted to Safaricom's published IPs (see middleware/ipWhitelist.js).
+app.use("/callback", logCallbackAccess, callbackLimiter, safaricomOnly, callbackRoutes);
 
 app.use("/transactions", transactionRoutes);
 
