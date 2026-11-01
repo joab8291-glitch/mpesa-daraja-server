@@ -5,6 +5,7 @@ const rateLimit = require("express-rate-limit");
 
 const { getAccessToken, generateStkPassword } = require("../utils/daraja");
 const { createDeposit, attachMpesaRequest, failDeposit, getWallet, getDepositForUser } = require("../utils/forexDb");
+const { auth: authenticateForexUser } = require("./forexAuth");
 
 const router = express.Router();
 const limiter = rateLimit({ windowMs: 10 * 60 * 1000, max: 8, standardHeaders: true, legacyHeaders: false });
@@ -19,24 +20,6 @@ function allowedOrigin(req, res, next) {
   next();
 }
 
-async function authenticateBlinkUser(req, res, next) {
-  try {
-    const match = /^Bearer\s+(.+)$/i.exec(req.get("authorization") || "");
-    if (!match) return res.status(401).json({ error: "Sign in to continue." });
-    const projectId = process.env.BLINK_PROJECT_ID;
-    if (!projectId) return res.status(503).json({ error: "Forex authentication is not configured on the payment server." });
-    const { createClient } = await import("@blinkdotnew/sdk");
-    const blink = createClient({ projectId, auth: { mode: "managed" } });
-    blink.auth.setToken(match[1]);
-    const user = await blink.auth.me();
-    if (!user?.id) return res.status(401).json({ error: "Your session is invalid. Sign in again." });
-    req.forexUser = { id: String(user.id) };
-    return next();
-  } catch (error) {
-    console.warn("Forex auth verification failed:", error.message);
-    return res.status(401).json({ error: "Could not verify your Forex session. Sign in again." });
-  }
-}
 
 function formatPhone(phone) {
   const cleaned = String(phone || "").replace(/[\s\-+]/g, "");
@@ -45,7 +28,7 @@ function formatPhone(phone) {
   return /^254[17]\d{8}$/.test(normalized) ? normalized : null;
 }
 
-router.use(allowedOrigin, authenticateBlinkUser);
+router.use(allowedOrigin, authenticateForexUser);
 
 router.get("/wallet", statusLimiter, async (req, res) => {
   try {
