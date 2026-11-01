@@ -13,12 +13,12 @@ const adminRoutes = require("./backend-addon/adminRoutes");
 
 const app = express();
 
-// Render is behind a proxy. Keep this setting aligned with the actual trusted
-// proxy topology; never use X-Forwarded-For alone as callback authentication.
-app.set("trust proxy", 1);
-app.disable("x-powered-by");
+app.set("trust proxy", true);
 
 // ---------- CORS ----------
+// Only these origins may call the API from a browser. Anything else
+// (curl, Postman, the Sambaza worker, server-to-server calls) is unaffected
+// by CORS — this only restricts browser-based requests.
 const allowedOrigins = [
   "https://webaziairtimehub.vercel.app",
   "https://webaziairtime.vercel.app",
@@ -28,6 +28,7 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: function (origin, callback) {
+      // Allow requests with no origin (curl, Postman, server-to-server, the worker)
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
@@ -37,9 +38,8 @@ app.use(
   })
 );
 
-// Limit request bodies to reduce memory/DoS risk from oversized JSON/form posts.
-app.use(express.json({ limit: "64kb", strict: true }));
-app.use(express.urlencoded({ extended: false, limit: "16kb", parameterLimit: 100 }));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 app.use("/agents", agentsRoutes);
 app.use("/admin", adminRoutes);
@@ -54,26 +54,9 @@ app.get("/health", (req, res) => {
 
 app.use("/mpesa", stkPushRoutes);
 
-// Callbacks are restricted to Safaricom's published IPs (see middleware/ipWhitelist.js).
 app.use("/callback", logCallbackAccess, callbackLimiter, safaricomOnly, callbackRoutes);
 
 app.use("/transactions", transactionRoutes);
-
-// Generic error handler: do not expose internal exception details to callers.
-app.use((err, req, res, next) => {
-  if (res.headersSent) return next(err);
-  if (err && err.type === "entity.too.large") {
-    return res.status(413).json({ error: "Request body too large" });
-  }
-  if (err && err.type === "entity.parse.failed") {
-    return res.status(400).json({ error: "Invalid request body" });
-  }
-  if (err && err.message === "Not allowed by CORS") {
-    return res.status(403).json({ error: "Origin not allowed" });
-  }
-  console.error("[HTTP] Unhandled request error:", err?.message || "unknown error");
-  return res.status(500).json({ error: "Internal server error" });
-});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

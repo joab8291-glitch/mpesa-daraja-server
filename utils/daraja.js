@@ -15,20 +15,11 @@ async function getAccessToken() {
 
   const response = await axios.get(
     `${MPESA_BASE_URL}/oauth/v1/generate?grant_type=client_credentials`,
-    { headers: { Authorization: `Basic ${auth}` }, timeout: 15000 }
+    { headers: { Authorization: `Basic ${auth}` } }
   );
 
-  if (!response.data?.access_token) {
-    const error = new Error("OAuth response did not contain an access token");
-    error.code = "MPESA_OAUTH_TOKEN_MISSING";
-    throw error;
-  }
-
   cachedToken = response.data.access_token;
-  const expiresInSeconds = Number.parseInt(response.data.expires_in, 10);
-  tokenExpiry = now + (Number.isFinite(expiresInSeconds) && expiresInSeconds > 60
-    ? (expiresInSeconds - 60) * 1000
-    : 300000);
+  tokenExpiry = now + (parseInt(response.data.expires_in, 10) - 60) * 1000;
 
   return cachedToken;
 }
