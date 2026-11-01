@@ -4,6 +4,7 @@ const cors = require("cors");
 
 const stkPushRoutes = require("./routes/stkPush");
 const forexDepositRoutes = require("./routes/forexDeposits");
+const forexAuthRoutes = require("./routes/forexAuth").router;
 const callbackRoutes = require("./routes/callbacks");
 const transactionRoutes = require("./routes/transactions");
 const { safaricomOnly } = require("./middleware/ipWhitelist");
@@ -46,6 +47,7 @@ app.get("/health", (req, res) => {
 });
 
 app.use("/mpesa", stkPushRoutes);
+app.use("/forex", forexAuthRoutes);
 app.use("/forex", forexDepositRoutes);
 app.use("/callback", logCallbackAccess, callbackLimiter, safaricomOnly, callbackRoutes);
 app.use("/transactions", transactionRoutes);
