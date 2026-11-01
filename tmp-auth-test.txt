@@ -1,1 +1,0 @@
-Independent Forex auth implementation work branch.
