@@ -17,6 +17,14 @@ const publicCheckoutLimiter = rateLimit({
   message: { error: "Too many payment attempts. Please wait a few minutes and try again." },
 });
 
+const publicStatusLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many status checks. Please wait and try again." },
+});
+
 const allowedCheckoutOrigins = new Set([
   "https://webaziairtime.vercel.app",
   "https://webaziairtimehub.vercel.app",
@@ -168,7 +176,7 @@ router.post("/stk-push", allowCheckoutOrigin, publicCheckoutLimiter, async (req,
 });
 
 // STK Push Query – check status of a previous STK request
-router.post("/stk-query", checkApiKey, async (req, res) => {
+router.post("/stk-query", allowCheckoutOrigin, publicStatusLimiter, async (req, res) => {
   try {
     const { checkoutRequestId } = req.body;
 
