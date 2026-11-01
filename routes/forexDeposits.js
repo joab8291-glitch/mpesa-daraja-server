@@ -2,7 +2,7 @@ const express = require("express");
 const axios = require("axios");
 const crypto = require("crypto");
 const rateLimit = require("express-rate-limit");
-const { createClient } = require("@blinkdotnew/sdk");
+
 const { getAccessToken, generateStkPassword } = require("../utils/daraja");
 const { createDeposit, attachMpesaRequest, failDeposit, getWallet, getDepositForUser } = require("../utils/forexDb");
 
@@ -25,6 +25,7 @@ async function authenticateBlinkUser(req, res, next) {
     if (!match) return res.status(401).json({ error: "Sign in to continue." });
     const projectId = process.env.BLINK_PROJECT_ID;
     if (!projectId) return res.status(503).json({ error: "Forex authentication is not configured on the payment server." });
+    const { createClient } = await import("@blinkdotnew/sdk");
     const blink = createClient({ projectId, auth: { mode: "managed" } });
     blink.auth.setToken(match[1]);
     const user = await blink.auth.me();
