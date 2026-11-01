@@ -1,0 +1,28 @@
+name: Forex deposit backend checks
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "server.js"
+      - "routes/**"
+      - "utils/**"
+      - "package.json"
+      - ".github/workflows/forex-deposit-check.yml"
+  push:
+    branches: [feat/forex-mpesa-deposits]
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install
+      - run: node --check server.js
+      - run: node --check routes/forexDeposits.js
+      - run: node --check routes/callbacks.js
+      - run: node --check utils/forexDb.js
