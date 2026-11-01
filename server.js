@@ -22,6 +22,7 @@ app.set("trust proxy", true);
 const allowedOrigins = [
   "https://webaziairtimehub.vercel.app",
   "https://webaziairtime.vercel.app",
+  "https://airtime.webazi.co.ke",
   "http://localhost:3000",
 ];
 
