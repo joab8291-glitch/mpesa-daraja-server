@@ -1,10 +1,35 @@
 const express = require("express");
 const axios = require("axios");
+const rateLimit = require("express-rate-limit");
 const { getByMerchantRequestId, getLatestByPhone } = require("../db");
 const { getAccessToken, generateStkPassword } = require("../utils/daraja");
 const { globalOrders } = require("../utils/orders");
 
 const router = express.Router();
+
+// Public customer checkout: no browser-embedded secret.
+// Safeguards: strict browser-origin allowlist and per-IP throttling.
+const publicCheckoutLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many payment attempts. Please wait a few minutes and try again." },
+});
+
+const allowedCheckoutOrigins = new Set([
+  "https://webaziairtime.vercel.app",
+  "https://webaziairtimehub.vercel.app",
+  "http://localhost:3000",
+]);
+
+function allowCheckoutOrigin(req, res, next) {
+  const origin = req.get("origin");
+  if (origin && !allowedCheckoutOrigins.has(origin)) {
+    return res.status(403).json({ error: "Origin not allowed" });
+  }
+  next();
+}
 
 // ---------- Helpers ----------
 
@@ -59,16 +84,16 @@ function checkApiKey(req, res, next) {
   next();
 }
 
-// Apply API key check to all routes in this file
-router.use(checkApiKey);
+// Public checkout is protected by origin validation and rate limiting.
+// Query and order-management endpoints retain private API-key protection.
 
 // ---------- Routes ----------
 
-router.post("/stk-push", async (req, res) => {
+router.post("/stk-push", allowCheckoutOrigin, publicCheckoutLimiter, async (req, res) => {
   try {
     const { phone, amount, accountRef, description } = req.body;
 
-    if (!phone || !amount) {
+    if (!phone || amount === undefined || amount === null || amount === "") {
       return res.status(400).json({ error: "phone and amount are required" });
     }
 
@@ -80,10 +105,10 @@ router.post("/stk-push", async (req, res) => {
       });
     }
 
-    // Amount must be a positive integer
-    const parsedAmount = parseInt(amount, 10);
-    if (isNaN(parsedAmount) || parsedAmount < 1) {
-      return res.status(400).json({ error: "amount must be a positive number" });
+    // Accept only whole-KES amounts within the public checkout limit.
+    const parsedAmount = Number(amount);
+    if (!Number.isSafeInteger(parsedAmount) || parsedAmount < 1 || parsedAmount > 10000) {
+      return res.status(400).json({ error: "amount must be a whole KES amount between 1 and 10,000" });
     }
 
     const token = await getAccessToken();
@@ -143,7 +168,7 @@ router.post("/stk-push", async (req, res) => {
 });
 
 // STK Push Query – check status of a previous STK request
-router.post("/stk-query", async (req, res) => {
+router.post("/stk-query", checkApiKey, async (req, res) => {
   try {
     const { checkoutRequestId } = req.body;
 
@@ -192,7 +217,7 @@ router.post("/stk-query", async (req, res) => {
 
 // GET order status by merchantRequestId or phone.
 // Protected by the same checkApiKey middleware applied to this whole router.
-router.get("/order-status", async (req, res) => {
+router.get("/order-status", checkApiKey, async (req, res) => {
   const { merchantRequestId, phone } = req.query;
 
   if (!merchantRequestId && !phone) {
