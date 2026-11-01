@@ -27,6 +27,7 @@ const publicStatusLimiter = rateLimit({
 
 const allowedCheckoutOrigins = new Set([
   "https://webaziairtime.vercel.app",
+  "https://airtime.webazi.co.ke",
   "https://webaziairtimehub.vercel.app",
   "http://localhost:3000",
 ]);
