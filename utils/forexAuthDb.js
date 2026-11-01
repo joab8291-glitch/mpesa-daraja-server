@@ -37,7 +37,6 @@ async function ready() {
       );
       CREATE INDEX IF NOT EXISTS forex_simulated_trades_user_created_idx
         ON forex_simulated_trades(user_id, created_at DESC);
-      CREATE INDEX IF NOT EXISTS forex_wallets_user_id_idx ON forex_wallets(user_id);
     `).catch((error) => { schemaPromise = null; throw error; });
   }
   await schemaPromise;
