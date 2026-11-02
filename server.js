@@ -14,7 +14,7 @@ const agentsRoutes = require("./backend-addon/agentsRoutes");
 const adminRoutes = require("./backend-addon/adminRoutes");
 
 const app = express();
-app.set("trust proxy", true);
+// Render sits behind one trusted reverse-proxy hop. Do not trust arbitrary\n// X-Forwarded-* values supplied by clients.\napp.set("trust proxy", 1);
 
 const forexOrigins = (process.env.FOREX_ALLOWED_ORIGINS || "")
   .split(",").map((value) => value.trim()).filter(Boolean);
@@ -53,7 +53,7 @@ app.use("/callback", logCallbackAccess, callbackLimiter, safaricomOnly, callback
 app.use("/transactions", transactionRoutes);
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+// Bind explicitly to all interfaces so Render can detect the listening port.\nconst server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`Webazi Daraja server running on port ${PORT}`);
   console.log(`Environment: ${process.env.MPESA_ENV || "not set"}`);
   console.log(`Forex origins configured: ${forexOrigins.length}`);
