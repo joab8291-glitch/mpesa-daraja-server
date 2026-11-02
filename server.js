@@ -53,7 +53,7 @@ app.use("/callback", logCallbackAccess, callbackLimiter, safaricomOnly, callback
 app.use("/transactions", transactionRoutes);
 
 const PORT = process.env.PORT || 3000;
-// Bind explicitly to all interfaces so Render can detect the listening port.\nconst server = app.listen(PORT, "0.0.0.0", () => {
+// Bind explicitly to all interfaces so Render can detect the listening port.\napp.listen(PORT, "0.0.0.0", () => {
   console.log(`Webazi Daraja server running on port ${PORT}`);
   console.log(`Environment: ${process.env.MPESA_ENV || "not set"}`);
   console.log(`Forex origins configured: ${forexOrigins.length}`);
