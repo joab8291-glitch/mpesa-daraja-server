@@ -170,7 +170,7 @@ async function closeTrade(userId, id, exitPrice) {
     const pnl = Math.round(pnlUsd({symbol:trade.symbol,side:trade.side,quantity:Number(trade.quantity),entryPrice:Number(trade.entry_price),exitPrice})*100)/100;
     await client.query("INSERT INTO forex_paper_accounts (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING", [userId]);
     const updated = await client.query(
-      "UPDATE forex_paper_accounts SET balance_usd=balance_usd+$2, updated_at=NOW() WHERE user_id=$1 RETURNING balance_usd",
+      "UPDATE forex_paper_accounts SET balance_usd=GREATEST(0,balance_usd+$2), updated_at=NOW() WHERE user_id=$1 RETURNING balance_usd",
       [userId,pnl]
     );
     const { rows } = await client.query(
