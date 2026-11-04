@@ -24,7 +24,7 @@ router.post("/trades",apiLimit,auth,async(req,res)=>{
   const allowedSymbols=new Set(["EUR/USD","GBP/USD","USD/JPY","AUD/USD","USD/CAD","USD/CHF"]);
   const quantity=Number(t.quantity);
   const quote=market.getQuotes().find(q=>q.symbol===t.symbol);
-  if(!quote||!quote.timestamp||Date.now()/1000-quote.timestamp>30) return res.status(503).json({error:"Fresh quote unavailable. Try again when the market feed is connected."});
+  if(!quote||!quote.timestamp||Date.now()/1000-quote.timestamp>120) return res.status(503).json({error:"Fresh quote unavailable. Try again when the market feed is connected."});
   const entryPrice=t.side==="buy"?Number(quote.ask):Number(quote.bid);
   const stopLoss=t.stopLoss===null||t.stopLoss===undefined||t.stopLoss===""?null:Number(t.stopLoss);
   const takeProfit=t.takeProfit===null||t.takeProfit===undefined||t.takeProfit===""?null:Number(t.takeProfit);
@@ -53,7 +53,7 @@ router.patch("/trades/:id/close",apiLimit,auth,async(req,res)=>{
   const current=allTrades.find(t=>t.id===req.params.id&&t.status==="open");
   if(!current) return res.status(404).json({error:"Open practice trade not found."});
   const quote=market.getQuotes().find(q=>q.symbol===current.symbol);
-  if(!quote||!quote.timestamp||Date.now()/1000-quote.timestamp>30) return res.status(503).json({error:"Fresh quote unavailable."});
+  if(!quote||!quote.timestamp||Date.now()/1000-quote.timestamp>120) return res.status(503).json({error:"Fresh quote unavailable."});
   const exitPrice=current.side==="buy"?Number(quote.bid):Number(quote.ask);
   try {
     const trade=await db.closeTrade(req.forexUser.id,req.params.id,exitPrice);
