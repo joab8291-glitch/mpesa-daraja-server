@@ -49,8 +49,12 @@ router.post("/trades",apiLimit,auth,async(req,res)=>{
   }
 });
 router.patch("/trades/:id/close",apiLimit,auth,async(req,res)=>{
-  const exitPrice=Number(req.body?.exitPrice);
-  if(!Number.isFinite(exitPrice)||exitPrice<=0) return res.status(400).json({error:"Exit price is invalid."});
+  const allTrades=await db.listTrades(req.forexUser.id);
+  const current=allTrades.find(t=>t.id===req.params.id&&t.status==="open");
+  if(!current) return res.status(404).json({error:"Open practice trade not found."});
+  const quote=market.getQuotes().find(q=>q.symbol===current.symbol);
+  if(!quote||!quote.timestamp||Date.now()/1000-quote.timestamp>30) return res.status(503).json({error:"Fresh quote unavailable."});
+  const exitPrice=current.side==="buy"?Number(quote.bid):Number(quote.ask);
   try {
     const trade=await db.closeTrade(req.forexUser.id,req.params.id,exitPrice);
     if(!trade) return res.status(404).json({error:"Open practice trade not found."});
