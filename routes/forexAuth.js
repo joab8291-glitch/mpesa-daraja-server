@@ -16,6 +16,30 @@ router.post("/auth/login",limiter,async(req,res)=>{const email=String(req.body?.
 router.get("/auth/me",apiLimit,auth,(req,res)=>res.json({user:safe(req.forexUser)}));
 router.post("/auth/logout",apiLimit,auth,(_req,res)=>res.json({ok:true}));
 router.get("/trades",apiLimit,auth,async(req,res)=>{try{return res.json({trades:await db.listTrades(req.forexUser.id)});}catch(e){console.error(e.message);return res.status(500).json({error:"Could not load practice trades."});}});
-router.post("/trades",apiLimit,auth,async(req,res)=>{const t=req.body||{};if(typeof t.symbol!=="string"||!/^[A-Z]{3}\/[A-Z]{3}$/.test(t.symbol)||!["buy","sell"].includes(t.side)||!Number.isFinite(Number(t.quantity))||Number(t.quantity)<1000||Number(t.quantity)>1000000||!Number.isFinite(Number(t.entryPrice))||Number(t.entryPrice)<=0)return res.status(400).json({error:"Invalid practice trade details."});for(const v of [t.stopLoss,t.takeProfit])if(v!==null&&v!==undefined&&(!Number.isFinite(Number(v))||Number(v)<=0))return res.status(400).json({error:"Risk prices must be positive."});try{const trade=await db.createTrade(req.forexUser.id,{...t,quantity:Number(t.quantity),entryPrice:Number(t.entryPrice),stopLoss:t.stopLoss??null,takeProfit:t.takeProfit??null});return res.status(201).json({trade});}catch(e){console.error(e.message);return res.status(500).json({error:"Could not save practice trade."});}});
-router.patch("/trades/:id/close",apiLimit,auth,async(req,res)=>{const price=Number(req.body?.exitPrice);if(!Number.isFinite(price)||price<=0)return res.status(400).json({error:"Exit price is invalid."});try{const trade=await db.closeTrade(req.forexUser.id,req.params.id,price);if(!trade)return res.status(404).json({error:"Open practice trade not found."});return res.json({trade});}catch(e){console.error(e.message);return res.status(500).json({error:"Could not close practice trade."});}});
+router.post("/trades",apiLimit,auth,async(req,res)=>{
+  const t=req.body||{};
+  const allowedSymbols=new Set(["EUR/USD","GBP/USD","USD/JPY","AUD/USD","USD/CAD","USD/CHF"]);
+  const quantity=Number(t.quantity);
+  const entryPrice=Number(t.entryPrice);
+  const stopLoss=t.stopLoss===null||t.stopLoss===undefined||t.stopLoss===""?null:Number(t.stopLoss);
+  const takeProfit=t.takeProfit===null||t.takeProfit===undefined||t.takeProfit===""?null:Number(t.takeProfit);
+  if(typeof t.symbol!=="string"||!allowedSymbols.has(t.symbol)||!["buy","sell"].includes(t.side)||
+    !Number.isSafeInteger(quantity)||quantity<1000||quantity>1000000||
+    !Number.isFinite(entryPrice)||entryPrice<=0||
+    (stopLoss!==null&&(!Number.isFinite(stopLoss)||stopLoss<=0))||
+    (takeProfit!==null&&(!Number.isFinite(takeProfit)||takeProfit<=0))){
+    return res.status(400).json({error:"Invalid practice trade details. Check the market, whole-unit size and prices."});
+  }
+  if((t.side==="buy"&&((stopLoss!==null&&stopLoss>=entryPrice)||(takeProfit!==null&&takeProfit<=entryPrice)))||
+     (t.side==="sell"&&((stopLoss!==null&&stopLoss<=entryPrice)||(takeProfit!==null&&takeProfit>=entryPrice)))){
+    return res.status(400).json({error:t.side==="buy"?"For a buy trade, stop loss must be below entry and take profit above entry.":"For a sell trade, stop loss must be above entry and take profit below entry."});
+  }
+  try{
+    const trade=await db.createTrade(req.forexUser.id,{symbol:t.symbol,side:t.side,quantity,entryPrice,stopLoss,takeProfit});
+    return res.status(201).json({trade});
+  }catch(e){
+    console.error("Forex practice trade create failed:",e.message);
+    return res.status(500).json({error:"Could not save practice trade."});
+  }
+});
 module.exports={router,auth};
