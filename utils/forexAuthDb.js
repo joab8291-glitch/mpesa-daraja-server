@@ -120,7 +120,18 @@ async function getPaperAccount(userId) {
   const margin = await pool.query("SELECT COALESCE(SUM(margin_required),0) AS used FROM forex_simulated_trades WHERE user_id=$1 AND status='open'", [userId]);
   const balance = Number(account.rows[0].balance_usd);
   const usedMargin = Number(margin.rows[0].used);
-  return { currency: "USD", balance, usedMargin, freeMargin: balance-usedMargin };
+  const { rows: positions } = await pool.query("SELECT symbol,side,quantity,entry_price AS entry FROM forex_simulated_trades WHERE user_id=$1 AND status='open'", [userId]);
+  const quotes = require("./forexMarket").getQuotes();
+  const now = Date.now()/1000;
+  const floatingPnl = positions.reduce((sum, trade) => {
+    const quote = quotes.find(item => item.symbol === trade.symbol);
+    if (!quote || !quote.timestamp || now-quote.timestamp>30) return sum;
+    const exit = trade.side === "buy" ? Number(quote.bid) : Number(quote.ask);
+    const raw = Number(trade.quantity)*(exit-Number(trade.entry))*(trade.side === "buy" ? 1 : -1);
+    return sum + (trade.symbol.endsWith("/USD") ? raw : raw/exit);
+  }, 0);
+  const equity = balance + floatingPnl;
+  return { currency: "USD", balance, usedMargin, floatingPnl, equity, freeMargin: equity-usedMargin };
 }
 
 function pnlUsd({symbol,side,quantity,entryPrice,exitPrice}) {
