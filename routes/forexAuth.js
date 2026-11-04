@@ -15,6 +15,7 @@ router.post("/auth/register",limiter,async(req,res)=>{const email=String(req.bod
 router.post("/auth/login",limiter,async(req,res)=>{const email=String(req.body?.email||"").trim().toLowerCase();const password=String(req.body?.password||"");try{const u=await db.findUserByEmail(email);if(!u||!(await verifyPassword(password,u.password_salt,u.password_hash)))return res.status(401).json({error:"Email or password is incorrect."});return res.json({token:tokenFor(u),user:safe(u)});}catch(e){console.error("Forex login:",e.message);return res.status(503).json({error:"Could not sign in."});}});
 router.get("/auth/me",apiLimit,auth,(req,res)=>res.json({user:safe(req.forexUser)}));
 router.post("/auth/logout",apiLimit,auth,(_req,res)=>res.json({ok:true}));
+router.get("/account",apiLimit,auth,async(req,res)=>{try{return res.json({account:await db.getPaperAccount(req.forexUser.id)});}catch(e){console.error("Forex paper account:",e.message);return res.status(500).json({error:"Could not load your practice account."});}});
 router.get("/trades",apiLimit,auth,async(req,res)=>{try{return res.json({trades:await db.listTrades(req.forexUser.id)});}catch(e){console.error(e.message);return res.status(500).json({error:"Could not load practice trades."});}});
 router.post("/trades",apiLimit,auth,async(req,res)=>{
   const t=req.body||{};
@@ -39,6 +40,7 @@ router.post("/trades",apiLimit,auth,async(req,res)=>{
     return res.status(201).json({trade});
   }catch(e){
     console.error("Forex practice trade create failed:",e.message);
+    if(e.code==="INSUFFICIENT_MARGIN") return res.status(422).json({error:e.message});
     return res.status(500).json({error:"Could not save practice trade."});
   }
 });
