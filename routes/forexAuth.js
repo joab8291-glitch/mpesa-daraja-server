@@ -3,6 +3,7 @@ const crypto=require("crypto");
 const rateLimit=require("express-rate-limit");
 const {hashPassword,verifyPassword}=require("../utils/forexPasswords");
 const db=require("../utils/forexAuthDb");
+const market=require("../utils/forexMarket");
 const router=express.Router();
 const limiter=rateLimit({windowMs:15*60*1000,max:12,standardHeaders:true,legacyHeaders:false});
 const apiLimit=rateLimit({windowMs:5*60*1000,max:180,standardHeaders:true,legacyHeaders:false});
@@ -22,7 +23,9 @@ router.post("/trades",apiLimit,auth,async(req,res)=>{
   const t=req.body||{};
   const allowedSymbols=new Set(["EUR/USD","GBP/USD","USD/JPY","AUD/USD","USD/CAD","USD/CHF"]);
   const quantity=Number(t.quantity);
-  const entryPrice=Number(t.entryPrice);
+  const quote=market.getQuotes().find(q=>q.symbol===t.symbol);
+  if(!quote||!quote.timestamp||Date.now()/1000-quote.timestamp>30) return res.status(503).json({error:"Fresh quote unavailable. Try again when the market feed is connected."});
+  const entryPrice=t.side==="buy"?Number(quote.ask):Number(quote.bid);
   const stopLoss=t.stopLoss===null||t.stopLoss===undefined||t.stopLoss===""?null:Number(t.stopLoss);
   const takeProfit=t.takeProfit===null||t.takeProfit===undefined||t.takeProfit===""?null:Number(t.takeProfit);
   if(typeof t.symbol!=="string"||!allowedSymbols.has(t.symbol)||!["buy","sell"].includes(t.side)||
