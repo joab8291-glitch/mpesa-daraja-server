@@ -61,7 +61,7 @@ router.post("/deposits/stk-push", limiter, async (req, res) => {
         BusinessShortCode: MPESA_SHORTCODE, Password: password, Timestamp: timestamp,
         TransactionType: "CustomerPayBillOnline", Amount: amount, PartyA: phone,
         PartyB: MPESA_SHORTCODE, PhoneNumber: phone, CallBackURL: MPESA_CALLBACK_URL,
-        AccountReference: `FX-${id.slice(0, 9)}`, TransactionDesc: "Forex deposit",
+        AccountReference: "Webazi", TransactionDesc: "Payment",
       },
       { headers: { Authorization: `Bearer ${token}` }, timeout: 30000 }
     );
