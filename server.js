@@ -5,6 +5,8 @@ const cors = require("cors");
 const stkPushRoutes = require("./routes/stkPush");
 const forexDepositRoutes = require("./routes/forexDeposits");
 const forexAuthRoutes = require("./routes/forexAuth").router;
+const forexDb = require("./utils/forexAuthDb");
+const { startForexMarket } = require("./utils/forexMarket");
 const callbackRoutes = require("./routes/callbacks");
 const transactionRoutes = require("./routes/transactions");
 const { safaricomOnly } = require("./middleware/ipWhitelist");
@@ -57,6 +59,19 @@ app.use("/transactions", transactionRoutes);
 const PORT = process.env.PORT || 3000;
 // Bind explicitly to all interfaces so Render can detect the listening port.
 app.listen(PORT, "0.0.0.0", () => {
+  startForexMarket({ onPrice: async (quote) => {
+    const open = await forexDb.listOpenTrades();
+    for (const trade of open) {
+      if (trade.symbol !== quote.symbol) continue;
+      const exit = trade.side === "buy" ? quote.bid : quote.ask;
+      const stopHit = trade.stopLoss != null && (trade.side === "buy" ? exit <= Number(trade.stopLoss) : exit >= Number(trade.stopLoss));
+      const targetHit = trade.takeProfit != null && (trade.side === "buy" ? exit >= Number(trade.takeProfit) : exit <= Number(trade.takeProfit));
+      if (stopHit || targetHit) {
+        const closed = await forexDb.closeTrade(trade.userId, trade.id, exit);
+        if (closed) console.log("[forex-market] Auto-closed " + trade.symbol + " " + trade.side + " at " + exit + " (" + (stopHit ? "stop-loss" : "take-profit") + ").");
+      }
+    }
+  }});
   console.log(`Webazi Daraja server running on port ${PORT}`);
   console.log(`Environment: ${process.env.MPESA_ENV || "not set"}`);
   console.log(`Forex origins configured: ${forexOrigins.length}`);
