@@ -103,6 +103,16 @@ async function listTrades(userId) {
   return rows;
 }
 
+async function listOpenTrades() {
+  await ready();
+  const { rows } = await pool.query(
+    `SELECT id, user_id AS "userId", symbol, side, quantity, entry_price AS "entryPrice",
+      stop_loss AS "stopLoss", take_profit AS "takeProfit"
+     FROM forex_simulated_trades WHERE status='open'`
+  );
+  return rows;
+}
+
 async function getPaperAccount(userId) {
   await ready();
   await pool.query("INSERT INTO forex_paper_accounts (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING", [userId]);
@@ -195,4 +205,4 @@ async function closeTrade(userId, id, exitPrice) {
   }
 }
 
-module.exports = { createUser, findUserByEmail, findUserById, listTrades, createTrade, closeTrade, getPaperAccount };
+module.exports = { createUser, findUserByEmail, findUserById, listTrades, createTrade, closeTrade, getPaperAccount, listOpenTrades };
