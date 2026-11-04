@@ -44,4 +44,18 @@ router.post("/trades",apiLimit,auth,async(req,res)=>{
     return res.status(500).json({error:"Could not save practice trade."});
   }
 });
+router.patch("/trades/:id/close",apiLimit,auth,async(req,res)=>{
+  const exitPrice=Number(req.body?.exitPrice);
+  if(!Number.isFinite(exitPrice)||exitPrice<=0) return res.status(400).json({error:"Exit price is invalid."});
+  try {
+    const trade=await db.closeTrade(req.forexUser.id,req.params.id,exitPrice);
+    if(!trade) return res.status(404).json({error:"Open practice trade not found."});
+    const account=await db.getPaperAccount(req.forexUser.id);
+    return res.json({trade,account});
+  } catch(e) {
+    console.error("Forex practice trade close failed:",e.message);
+    return res.status(500).json({error:"Could not close practice trade."});
+  }
+});
+
 module.exports={router,auth};
