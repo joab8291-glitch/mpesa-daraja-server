@@ -125,7 +125,7 @@ async function getPaperAccount(userId) {
   const now = Date.now()/1000;
   const floatingPnl = positions.reduce((sum, trade) => {
     const quote = quotes.find(item => item.symbol === trade.symbol);
-    if (!quote || !quote.timestamp || now-quote.timestamp>30) return sum;
+    if (!quote || !quote.timestamp || now-quote.timestamp>120) return sum;
     const exit = trade.side === "buy" ? Number(quote.bid) : Number(quote.ask);
     const raw = Number(trade.quantity)*(exit-Number(trade.entry))*(trade.side === "buy" ? 1 : -1);
     return sum + (trade.symbol.endsWith("/USD") ? raw : raw/exit);
