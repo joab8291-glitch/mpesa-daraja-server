@@ -33,6 +33,11 @@ const allowedOrigins = [
 app.use(cors({
   origin(origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    try {
+      const host = new URL(origin).hostname;
+      const isForexVercel = host === "forextrading.vercel.app" || host === "forextrading-plum.vercel.app" || /^forextrading-[a-z0-9-]+-joab8291-2461s-projects\\.vercel\\.app$/.test(host);
+      if (isForexVercel) return callback(null, true);
+    } catch {}
     return callback(new Error("Not allowed by CORS"));
   },
 }));
